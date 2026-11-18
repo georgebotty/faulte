@@ -1,0 +1,2350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1113">
+<title>FAULTLE: Diagnose the fault in six clues</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23f5b301'/%3E%3Cpath d='M44 12a12 12 0 0 0-11 16L14 47a4.5 4.5 0 0 0 6 6l19-19a12 12 0 0 0 16-11l-7 4-6-3-1-7z' fill='%23111'/%3E%3C/svg%3E">
+<style>
+/* =====================================================================
+ * THEME — workshop palette. Dark by default; .light on <html> swaps it.
+ * ===================================================================== */
+:root {
+  --bg: #0f1113;
+  --bg2: #16191c;
+  --panel: #1c2024;
+  --panel2: #23282d;
+  --line: #31373d;
+  --text: #e8e6e1;
+  --muted: #8d949b;
+  --accent: #f5b301;      /* hazard yellow */
+  --accent2: #ff7a1a;     /* safety orange */
+  --hit: #3ddc84;
+  --close: #f5a524;
+  --miss: #e5484d;
+  --skip: #4a5158;
+  --screen: #0a1a12;      /* OBD screen */
+  --screen-text: #9cf5c0;
+  --shadow: 0 10px 30px rgba(0,0,0,.45);
+  --radius: 14px;
+  --head: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+html.light {
+  --bg: #e9e6df; --bg2: #ddd9d0; --panel: #f7f5f0; --panel2: #ecE9e2; --line: #c9c4b8;
+  --text: #1d2125; --muted: #5f666d; --screen: #e3efe7; --screen-text: #11603a;
+  --skip: #a9afb5; --shadow: 0 8px 24px rgba(0,0,0,.12);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--body);
+  color: var(--text);
+  background:
+    radial-gradient(1200px 600px at 50% -200px, rgba(245,179,1,.08), transparent 70%),
+    /* diamond tread-plate texture */
+    repeating-linear-gradient(45deg, rgba(255,255,255,.018) 0 2px, transparent 2px 14px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,.018) 0 2px, transparent 2px 14px),
+    var(--bg);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+.hidden { display: none !important; }
+
+/* ----------------------------- Header ----------------------------- */
+.hazard { height: 6px; background: repeating-linear-gradient(-45deg, var(--accent) 0 14px, #111 14px 28px); }
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.top-inner { max-width: 880px; margin: 0 auto; display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
+.logo { display: flex; align-items: center; gap: 10px; margin-right: auto; text-decoration: none; color: var(--text); }
+.logo svg { width: 34px; height: 34px; }
+.logo h1 { font-family: var(--head); font-size: 1.55rem; letter-spacing: .14em; margin: 0; font-weight: 800; line-height: 1; }
+.logo h1 span { color: var(--accent); }
+.logo small { display: block; font-size: .66rem; color: var(--muted); letter-spacing: .18em; text-transform: uppercase; margin-top: 3px; }
+.icon-btn {
+  width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel); display: grid; place-items: center; transition: transform .15s, border-color .15s;
+}
+.icon-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+.icon-btn svg { width: 20px; height: 20px; }
+
+main { max-width: 880px; margin: 0 auto; padding: 16px 16px 60px; }
+
+/* ----------------------------- Mode tabs ----------------------------- */
+.modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+.mode {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 10px 6px;
+  font-family: var(--head); text-transform: uppercase; letter-spacing: .1em; font-size: .82rem; font-weight: 700;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; transition: all .2s;
+  position: relative; overflow: hidden;
+}
+.mode .ico { font-size: 1.2rem; }
+.mode small { font-family: var(--body); letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--muted); font-size: .7rem; }
+.mode[aria-selected="true"] { border-color: var(--accent); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 16%, var(--panel)), var(--panel)); box-shadow: inset 0 -3px 0 var(--accent); }
+.mode:hover { transform: translateY(-1px); }
+
+/* --------------------------- Info bar & panels --------------------------- */
+.infobar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 14px;
+  font-size: .9rem;
+}
+.infobar .grow { flex: 1; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); font-size: .8rem; white-space: nowrap; }
+.pill b { color: var(--accent); }
+.btn {
+  border: 1px solid var(--line); background: var(--panel2); border-radius: 10px; padding: 10px 16px;
+  font-weight: 650; transition: transform .12s, background .2s, border-color .2s; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:active:not(:disabled) { transform: scale(.97); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #17140a; }
+.btn.primary:hover:not(:disabled) { background: #ffc531; }
+.btn.small { padding: 6px 10px; font-size: .82rem; }
+.btn.danger { border-color: var(--miss); color: var(--miss); }
+
+/* Career XP bar */
+.xpbar { height: 10px; background: var(--bg2); border-radius: 99px; overflow: hidden; border: 1px solid var(--line); min-width: 140px; flex: 1; }
+.xpbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); width: 0; transition: width .8s cubic-bezier(.2,.8,.2,1); }
+
+/* Filters */
+.filters { padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 14px; animation: drop .25s ease; }
+.filters h4 { margin: 4px 0 8px; font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.chip { border: 1px solid var(--line); background: var(--bg2); padding: 5px 10px; border-radius: 999px; font-size: .8rem; transition: all .15s; }
+.chip[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, var(--bg2)); border-color: var(--accent); }
+.chip.locked { opacity: .5; }
+
+/* ----------------------------- Job card ----------------------------- */
+.job {
+  background: linear-gradient(180deg, var(--panel), var(--bg2));
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+  overflow: hidden; position: relative;
+}
+.job-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
+.job-head .wo { font-family: var(--mono); font-size: .78rem; color: var(--muted); }
+.job-head .title { font-family: var(--head); text-transform: uppercase; letter-spacing: .12em; font-weight: 800; }
+.diff { font-size: .7rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; }
+.diff.easy { background: #1f4d34; color: #8ff0b8; }
+.diff.medium { background: #4d3f12; color: #ffd76a; }
+.diff.hard { background: #5a2a12; color: #ffab73; }
+.diff.expert { background: #551a2b; color: #ff9cb6; }
+html.light .diff.easy { background: #c9efd8; color: #15663a; }
+html.light .diff.medium { background: #fbe9b5; color: #7a5a00; }
+html.light .diff.hard { background: #ffd8c0; color: #8a3a0c; }
+html.light .diff.expert { background: #ffd0dc; color: #8a1838; }
+
+/* Progress: six LED segments */
+.progress { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+.leds { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; flex: 1; }
+.led { height: 10px; border-radius: 4px; background: var(--bg); border: 1px solid var(--line); transition: background .3s, box-shadow .3s; }
+.led.on { background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent); border-color: transparent; }
+.led.miss { background: var(--miss); border-color: transparent; }
+.led.close { background: var(--close); border-color: transparent; }
+.led.hit { background: var(--hit); box-shadow: 0 0 12px var(--hit); border-color: transparent; }
+.led.skip { background: var(--skip); border-color: transparent; }
+.clue-count { font-family: var(--head); font-weight: 800; letter-spacing: .1em; font-size: .9rem; white-space: nowrap; }
+.worth { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.worth b { color: var(--accent); }
+
+/* Timer ring for Timed mode */
+.timer { --p: 1; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+  background: conic-gradient(var(--tc, var(--hit)) calc(var(--p) * 360deg), var(--bg) 0); }
+.timer span { width: 36px; height: 36px; border-radius: 50%; background: var(--panel); display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: .9rem; }
+.timer.low span { color: var(--miss); animation: pulse .5s infinite alternate; }
+
+/* Clue list styled like a diagnostic screen */
+.screen { margin: 0 16px 14px; background: var(--screen); border-radius: 10px; border: 1px solid #1f3a2b; padding: 6px; box-shadow: inset 0 0 30px rgba(0,0,0,.5); }
+html.light .screen { border-color: #b8d3c2; box-shadow: inset 0 0 12px rgba(0,0,0,.06); }
+.clue { display: flex; gap: 12px; padding: 10px 10px; border-radius: 8px; color: var(--screen-text); font-family: var(--mono); font-size: .93rem; line-height: 1.45; }
+.clue + .clue { border-top: 1px dashed color-mix(in srgb, var(--screen-text) 20%, transparent); }
+.clue .n { flex-shrink: 0; width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; font-weight: 800; font-size: .8rem;
+  background: color-mix(in srgb, var(--screen-text) 14%, transparent); }
+.clue.new { animation: clueIn .55s cubic-bezier(.2,.9,.3,1.2); }
+.clue.new .txt { animation: typeGlow 1.2s ease; }
+.clue.locked { color: color-mix(in srgb, var(--screen-text) 35%, transparent); }
+.clue.locked .txt { letter-spacing: .3em; }
+
+/* Guess history */
+.guesses { display: flex; flex-direction: column; gap: 6px; padding: 0 16px 12px; }
+.guess { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; font-size: .9rem; border: 1px solid transparent; animation: drop .3s ease; }
+.guess .tag { font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; margin-left: auto; white-space: nowrap; opacity: .9; }
+.guess.miss { background: color-mix(in srgb, var(--miss) 16%, transparent); border-color: color-mix(in srgb, var(--miss) 45%, transparent); }
+.guess.close { background: color-mix(in srgb, var(--close) 16%, transparent); border-color: color-mix(in srgb, var(--close) 45%, transparent); }
+.guess.hit { background: color-mix(in srgb, var(--hit) 18%, transparent); border-color: var(--hit); }
+.guess .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.guess.miss .dot { background: var(--miss); } .guess.close .dot { background: var(--close); } .guess.hit .dot { background: var(--hit); }
+
+/* ------------------------- Diagnosis input ------------------------- */
+.controls { padding: 14px 16px 16px; border-top: 1px dashed var(--line); display: grid; grid-template-columns: 1fr auto auto; gap: 8px; }
+.combo { position: relative; }
+.combo input {
+  width: 100%; padding: 12px 14px 12px 40px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); font-size: 1rem; outline: none; transition: border-color .2s, box-shadow .2s;
+}
+.combo input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.combo .search-ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--muted); pointer-events: none; }
+.combo.shake { animation: shake .4s; }
+.suggest {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); max-height: 300px; overflow-y: auto; z-index: 30;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 6px;
+  animation: drop .15s ease;
+}
+.suggest .opt { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 10px; border-radius: 8px; border: 0; background: transparent; font-size: .92rem; }
+.suggest .opt small { margin-left: auto; color: var(--muted); font-size: .72rem; white-space: nowrap; }
+.suggest .opt mark { background: transparent; color: var(--accent); font-weight: 750; }
+.suggest .opt[aria-selected="true"], .suggest .opt:hover { background: var(--panel2); }
+.suggest .opt.tried { opacity: .4; text-decoration: line-through; }
+.suggest .hint { padding: 10px; color: var(--muted); font-size: .85rem; }
+
+/* ----------------------------- Result ----------------------------- */
+.result { padding: 18px 16px; border-top: 1px dashed var(--line); text-align: center; animation: drop .4s ease; position: relative; }
+.stamp {
+  display: inline-block; font-family: var(--head); font-weight: 900; letter-spacing: .18em; text-transform: uppercase; font-size: 1.3rem;
+  padding: 6px 16px; border: 3px solid currentColor; border-radius: 8px; transform: rotate(-4deg); animation: stamp .45s cubic-bezier(.2,1.6,.4,1);
+}
+.stamp.win { color: var(--hit); } .stamp.lose { color: var(--miss); }
+.answer { font-size: 1.35rem; font-weight: 800; margin: 14px 0 4px; }
+.answer-meta { color: var(--muted); font-size: .85rem; }
+.score-line { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+.score-line .pill { font-size: .9rem; padding: 6px 12px; }
+.result .actions { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.next-daily { margin-top: 12px; color: var(--muted); font-size: .85rem; font-family: var(--mono); }
+
+/* Legend under the card */
+.legend { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; color: var(--muted); font-size: .78rem; margin-top: 14px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* ----------------------------- Modals ----------------------------- */
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 50; display: grid; place-items: center; padding: 16px; animation: fade .2s ease; }
+.modal { width: min(640px, 100%); max-height: 88vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); animation: pop .25s cubic-bezier(.2,1.2,.4,1); }
+.modal-head { position: sticky; top: 0; background: var(--panel); display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); z-index: 1; }
+.modal-head h2 { margin: 0; font-family: var(--head); letter-spacing: .12em; text-transform: uppercase; font-size: 1.05rem; margin-right: auto; }
+.modal-body { padding: 16px 18px 20px; }
+.modal-body h3 { font-family: var(--head); letter-spacing: .1em; text-transform: uppercase; font-size: .8rem; color: var(--muted); margin: 20px 0 10px; }
+.modal-body h3:first-child { margin-top: 0; }
+.modal-body p, .modal-body li { line-height: 1.55; font-size: .93rem; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.tile { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.tile b { display: block; font-family: var(--head); font-size: 1.5rem; font-weight: 800; }
+.tile span { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.bars { display: flex; flex-direction: column; gap: 5px; }
+.bar { display: grid; grid-template-columns: 110px 1fr 54px; align-items: center; gap: 8px; font-size: .82rem; }
+.bar .track { height: 18px; background: var(--bg2); border-radius: 5px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--skip); border-radius: 5px; transition: width .7s cubic-bezier(.2,.8,.2,1); min-width: 2px; }
+.bar .fill.hl { background: var(--accent); }
+.bar .num { text-align: right; font-family: var(--mono); color: var(--muted); }
+.history { display: flex; flex-direction: column; gap: 4px; font-size: .84rem; }
+.history div { display: flex; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--bg2); }
+.history div span:last-child { margin-left: auto; color: var(--muted); font-family: var(--mono); }
+
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.ach { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line); }
+.ach .badge { font-size: 1.5rem; width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; background: var(--panel2); flex-shrink: 0; }
+.ach b { display: block; font-size: .88rem; } .ach small { color: var(--muted); font-size: .74rem; line-height: 1.3; display: block; }
+.ach.locked { opacity: .45; } .ach.locked .badge { filter: grayscale(1); }
+.ach.got { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+
+table.mini { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.mini td, table.mini th { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.switch { width: 46px; height: 26px; border-radius: 99px; background: var(--bg2); border: 1px solid var(--line); position: relative; transition: background .2s; flex-shrink: 0; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--muted); transition: transform .2s, background .2s; }
+.switch[aria-checked="true"] { background: color-mix(in srgb, var(--accent) 35%, var(--bg2)); }
+.switch[aria-checked="true"]::after { transform: translateX(20px); background: var(--accent); }
+
+/* ----------------------------- Toasts & FX ----------------------------- */
+.toasts { position: fixed; top: 76px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; width: max-content; max-width: 92vw; }
+.toast { background: var(--panel2); border: 1px solid var(--line); border-left: 4px solid var(--accent); padding: 10px 14px; border-radius: 10px; box-shadow: var(--shadow); font-size: .9rem; animation: toastIn .35s cubic-bezier(.2,1.3,.4,1); }
+.toast.out { animation: toastOut .3s ease forwards; }
+.toast b { color: var(--accent); }
+.spark { position: fixed; width: 6px; height: 6px; border-radius: 50%; pointer-events: none; z-index: 70; animation: spark .9s ease-out forwards; }
+
+@keyframes clueIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes typeGlow { 0% { text-shadow: 0 0 12px var(--screen-text); } 100% { text-shadow: none; } }
+@keyframes drop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes shake { 0%,100% { transform: none; } 20%,60% { transform: translateX(-7px); } 40%,80% { transform: translateX(7px); } }
+@keyframes stamp { from { transform: rotate(-4deg) scale(2.4); opacity: 0; } to { transform: rotate(-4deg) scale(1); opacity: 1; } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes pop { from { opacity: 0; transform: scale(.94) translateY(10px); } }
+@keyframes pulse { to { opacity: .4; } }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-14px) scale(.95); } }
+@keyframes toastOut { to { opacity: 0; transform: translateY(-10px); } }
+@keyframes spark { to { transform: translate(var(--dx), var(--dy)) scale(.2); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+
+/* ----------------------------- Mobile ----------------------------- */
+@media (max-width: 600px) {
+  .top-inner { padding: 8px 12px; gap: 6px; }
+  .logo small { display: none; }
+  .logo h1 { font-size: 1.25rem; }
+  .icon-btn { width: 36px; height: 36px; }
+  main { padding: 12px 10px 40px; }
+  .modes { gap: 6px; }
+  .mode { padding: 8px 2px; font-size: .7rem; letter-spacing: .05em; }
+  .mode small { display: none; }
+  .controls { grid-template-columns: 1fr 1fr; }
+  .controls .combo { grid-column: 1 / -1; }
+  .clue { font-size: .86rem; }
+  .screen { margin: 0 10px 12px; }
+  .progress, .job-head, .guesses, .controls { padding-left: 12px; padding-right: 12px; }
+  .bar { grid-template-columns: 84px 1fr 46px; }
+}
+
+</style>
+</head>
+<body>
+<div class="hazard"></div>
+<header class="top">
+  <div class="top-inner">
+    <a class="logo" href="#" aria-label="FAULTLE home">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#f5b301"/><path d="M44 12a12 12 0 0 0-11 16L14 47a4.5 4.5 0 0 0 6 6l19-19a12 12 0 0 0 16-11l-7 4-6-3-1-7z" fill="#111"/></svg>
+      <div><h1>FAULT<span>LE</span></h1><small>Diagnose the fault in six clues</small></div>
+    </a>
+    <button class="icon-btn" id="btn-help" title="How to play" aria-label="How to play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17.5v.01"/></svg></button>
+    <button class="icon-btn" id="btn-stats" title="Statistics" aria-label="Statistics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
+    <button class="icon-btn" id="btn-ach" title="Achievements" aria-label="Achievements"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/></svg></button>
+    <button class="icon-btn" id="btn-sound" title="Toggle sound" aria-label="Toggle sound"></button>
+    <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <nav class="modes" id="modes" role="tablist" aria-label="Game modes"></nav>
+  <section class="infobar" id="infobar" aria-live="polite"></section>
+  <section class="filters hidden" id="filters"></section>
+  <section id="board"></section>
+  <div class="legend">
+    <span><i style="background:var(--hit)"></i>Correct diagnosis</span>
+    <span><i style="background:var(--close)"></i>Right system, wrong fault</span>
+    <span><i style="background:var(--miss)"></i>Wrong system</span>
+    <span><i style="background:var(--skip)"></i>Clue skipped</span>
+  </div>
+</main>
+
+<div id="modal-root"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+/* =====================================================================
+ * DATA MODULE
+ * ---------------------------------------------------------------------
+ * Every fault scenario: diagnosis, category, difficulty, six clues.
+ * Clue 1 is what a customer would say at the counter; each clue after
+ * that adds what a technician would find with more time, tools and
+ * test results. Clue 6 is close to conclusive.
+ * ===================================================================== */
+
+const CATEGORIES = [
+  'Engine', 'Transmission', 'Suspension', 'Steering', 'Electrical', 'Cooling',
+  'Brakes', 'Fuel System', 'Sensors', 'Emissions', 'HVAC', 'Hybrid & EV'
+];
+
+const DIFFICULTIES = ['easy', 'medium', 'hard', 'expert'];
+
+/** Small helper so the table below stays readable. */
+const F = (diagnosis, category, difficulty, clues) => ({ diagnosis, category, difficulty, clues });
+
+const FAULTS = [
+  /* ------------------------------ ENGINE ------------------------------ */
+  F('Worn Spark Plugs', 'Engine', 'easy', [
+    'Engine feels slightly rough at idle, most noticeably on cold mornings.',
+    'Fuel economy has crept down over the last few months.',
+    'Acceleration feels flat when the car is fully loaded or climbing hills.',
+    'A faint stumble under hard acceleration; misfire counters show random cylinders, not just one.',
+    'Service records show the ignition parts are still the originals at 100,000 miles.',
+    'The removed electrodes are rounded off, with a gap far wider than specification.'
+  ]),
+  F('Failed Ignition Coil', 'Engine', 'easy', [
+    'The engine suddenly started shuddering at idle.',
+    'The check engine light flashes when accelerating hard.',
+    'It feels as though the engine is running on one fewer cylinder.',
+    'Code P0302 is stored: misfire isolated to a single cylinder.',
+    'Swapping the plug-top units between cylinders 2 and 3 moves the misfire to cylinder 3.',
+    'The unit sitting on top of the spark plug has a hairline crack with carbon tracking down its boot.'
+  ]),
+  F('Blown Head Gasket', 'Engine', 'medium', [
+    'Coolant needs topping up every week, but there are no puddles under the car.',
+    'Thick white exhaust smoke with a sweet smell at start-up.',
+    'The temperature gauge climbs on long motorway hills, then settles.',
+    'A steady stream of bubbles rises in the expansion tank with the engine running.',
+    'The underside of the oil filler cap is coated in milky, mayonnaise-like sludge.',
+    'A combustion leak (block) test turns the test fluid from blue to yellow.'
+  ]),
+  F('Worn Piston Rings', 'Engine', 'hard', [
+    'The engine needs an extra litre of oil between services.',
+    'Blue-grey smoke trails behind the car under hard acceleration.',
+    'Spark plugs come out wet with oily, sooty deposits.',
+    'Lifting the oil filler cap at idle releases heavy puffs of blow-by.',
+    'Compression is low on all cylinders but jumps when a little oil is squirted into each bore.',
+    'A leak-down test shows air hissing out of the crankcase breather rather than the intake or exhaust.'
+  ]),
+  F('Worn Valve Stem Seals', 'Engine', 'hard', [
+    'A small cloud of smoke appears when the car is started in the morning.',
+    'The smoke is bluish and clears after half a minute of driving.',
+    'It also appears when accelerating after a long downhill coast with the throttle closed.',
+    'Oil use is modest and a compression test reads normal on every cylinder.',
+    'Oil is being drawn down the valve guides while manifold vacuum is high.',
+    'The small rubber seals on top of the valve guides have hardened and cracked with age.'
+  ]),
+  F('Stretched Timing Chain', 'Engine', 'hard', [
+    'A brief rattle is heard for a couple of seconds after a cold start.',
+    'The engine feels slightly down on power compared with when it was newer.',
+    'Check engine light with code P0016: crankshaft/camshaft position correlation.',
+    'The rattle comes from the front of the engine, behind the cover where the cam drive lives.',
+    'Live data shows cam phaser deviation at its limit, even at idle.',
+    'The tensioner is fully extended and the plastic guide rails are deeply grooved.'
+  ]),
+  F('Snapped Timing Belt', 'Engine', 'medium', [
+    'The car was cruising normally, then the engine cut out without warning.',
+    'The engine now cranks but will not fire.',
+    'Cranking sounds unusually fast and even, with no compression rhythm.',
+    'Service history shows the cam drive replacement is two years overdue.',
+    'Looking through the oil filler, the camshaft does not turn while cranking.',
+    'Behind the plastic cover, the toothed rubber drive is shredded in two.'
+  ]),
+  F('Intake Vacuum Leak', 'Engine', 'medium', [
+    'Idle speed sits higher than usual and occasionally hunts up and down.',
+    'The engine runs a little rough until it warms up.',
+    'Codes P0171 and P0174 are stored: both banks running lean.',
+    'Long-term fuel trims are +18% at idle but close to normal at 2,500 rpm.',
+    'A faint hiss can be heard from the top of the engine with the bonnet open.',
+    'A smoke machine shows smoke escaping from a split rubber hose on the intake manifold.'
+  ]),
+  F('Faulty PCV Valve', 'Engine', 'medium', [
+    'Oil seems to be disappearing slightly faster than normal.',
+    'There is an occasional whistle or howl at idle.',
+    'Fresh oil leaks are appearing at the cam cover and sump gasket at the same time.',
+    'The dipstick lifts slightly at idle; the crankcase is pressurised.',
+    'A rubber glove stretched over the oil filler inflates within seconds.',
+    'The crankcase breather’s one-way valve no longer rattles when shaken, and its diaphragm is torn.'
+  ]),
+  F('Failing Oil Pump', 'Engine', 'hard', [
+    'A light ticking noise comes from the top of the engine once it is warm.',
+    'The oil level is correct and it was recently changed with the right grade.',
+    'The oil warning light flickers at hot idle, especially after a long drive.',
+    'The hydraulic lifters clatter for much longer than normal after start-up.',
+    'A mechanical gauge confirms low oil pressure at every rpm, so the sender is not to blame.',
+    'With the sump off, the pickup screen is clean but the rotor clearances are well out of spec.'
+  ]),
+  F('Carbon Build-up on Intake Valves', 'Engine', 'expert', [
+    'A direct-injection petrol car at 70,000 miles feels a bit sluggish.',
+    'The idle is lumpy, and worse when the engine is cold.',
+    'Random misfire codes appear on cold starts, then clear once the engine is warm.',
+    'Fuel pressure, injector balance and ignition all test fine.',
+    'In this engine design, fuel never washes across the back of the valves.',
+    'A borescope through the intake port shows thick black crust on the valve tulips.'
+  ]),
+  F('Failed Engine Mount', 'Engine', 'easy', [
+    'There is a clunk when shifting from park into drive.',
+    'More vibration than usual comes through the seat at idle.',
+    'The vibration gets noticeably worse when the air conditioning cuts in.',
+    'A thump is felt on hard acceleration, and again when lifting off.',
+    'With the bonnet open, the engine visibly lurches when revved in gear with the brake held.',
+    'The rubber isolator is split and dark fluid has leaked from its hydraulic chamber.'
+  ]),
+  F('Failing Turbocharger', 'Engine', 'medium', [
+    'The car feels less punchy than it used to.',
+    'A high-pitched whistle, like a dentist’s drill, rises with engine speed.',
+    'Blue smoke appears under boost and when lifting off.',
+    'Code P0299 is stored: underboost condition.',
+    'Oil is pooling inside the intercooler pipework.',
+    'The compressor shaft has excessive radial play and the wheel has rubbed its housing.'
+  ]),
+  F('Boost Leak', 'Engine', 'hard', [
+    'A turbocharged car feels flat in the mid-range.',
+    'Code P0299 (underboost) appears now and then during hard acceleration.',
+    'A whooshing or hissing noise under load that was not there before.',
+    'The turbo itself spins freely with no shaft play.',
+    'There is oily residue around a hose clamp between the turbo and the throttle body.',
+    'Pressure testing the intake tract reveals a split intercooler hose.'
+  ]),
+  F('Worn Serpentine Belt', 'Engine', 'easy', [
+    'A squeal comes from the engine on cold, damp mornings.',
+    'It is worst just after starting and when turning the steering to full lock.',
+    'The noise briefly gets louder when the headlights and heated rear screen are switched on together.',
+    'A quick spray of water on the front of the engine makes the noise stop for a moment.',
+    'The single ribbed drive at the front of the engine looks shiny and glazed.',
+    'There are cracks across the ribs every few centimetres; the accessory drive belt has had it.'
+  ]),
+  F('Leaking Valve Cover Gasket', 'Engine', 'easy', [
+    'A burning oil smell enters the cabin after a long drive.',
+    'A faint wisp of smoke rises from under the bonnet at traffic lights.',
+    'The oil level drops slightly between services.',
+    'Oil residue is running down onto the exhaust manifold from the top of the engine.',
+    'The spark plug wells are found partly filled with oil.',
+    'The rubber seal around the top engine cover has gone hard and is weeping oil.'
+  ]),
+  F('Dirty Electronic Throttle Body', 'Engine', 'medium', [
+    'The idle dips and the engine nearly stalls when coming to a stop.',
+    'The idle sometimes surges briefly after starting.',
+    'Throttle response feels slightly lazy just off idle.',
+    'No fault codes, but the learned idle air values are at maximum adaptation.',
+    'The problem improved for a while after the battery was disconnected and the idle relearned.',
+    'A black ring of carbon has built up around the edge of the butterfly plate.'
+  ]),
+
+  /* --------------------------- TRANSMISSION --------------------------- */
+  F('Low Automatic Transmission Fluid', 'Transmission', 'easy', [
+    'Gear changes feel slightly delayed and soft.',
+    'A faint whine that changes with road speed has appeared.',
+    'Once fully warmed up, the engine revs flare briefly between gears.',
+    'Red-pink spots are appearing on the driveway under the middle of the car.',
+    'There is a noticeable pause before the car engages when drive is selected.',
+    'Checked hot on level ground, the gearbox fluid is well below the minimum mark.'
+  ]),
+  F('Worn Clutch', 'Transmission', 'easy', [
+    'A manual car feels less eager when overtaking.',
+    'Under hard acceleration, engine revs rise faster than road speed.',
+    'It is worst in 4th and 5th gear when climbing hills.',
+    'There is a burning smell after hill starts and towing.',
+    'The bite point has moved right to the top of the pedal travel.',
+    'The friction disc is worn almost down to its rivets.'
+  ]),
+  F('Failing Clutch Release Bearing', 'Transmission', 'medium', [
+    'A new noise has appeared from the middle of a manual car.',
+    'It is a whirring, chirping sound at idle.',
+    'The noise appears only when the clutch pedal is pressed down.',
+    'Releasing the pedal makes the noise stop immediately.',
+    'A gritty vibration can be felt through the pedal.',
+    'The bearing that presses on the pressure plate fingers is rough when spun by hand.'
+  ]),
+  F('Failing Dual Mass Flywheel', 'Transmission', 'hard', [
+    'A diesel manual car has developed a rattle at idle.',
+    'The rattle disappears when the clutch pedal is pressed.',
+    'There is a judder when pulling away gently.',
+    'A heavy clunk is felt when the engine is switched off.',
+    'Vibration comes through the floor when labouring in a high gear at low rpm.',
+    'The two halves of the flywheel rotate against each other with excessive free play.'
+  ]),
+  F('Torque Converter Clutch Shudder', 'Transmission', 'hard', [
+    'An automatic car vibrates gently at certain speeds.',
+    'It feels like driving over a rumble strip.',
+    'It happens around 40–50 mph under light throttle.',
+    'It disappears under heavier acceleration or with a light touch of the brakes.',
+    'Code P0741 is stored, and the shudder coincides with lock-up being commanded.',
+    'The lock-up clutch inside the fluid coupling between engine and gearbox is slipping.'
+  ]),
+  F('Faulty Transmission Shift Solenoid', 'Transmission', 'medium', [
+    'The automatic occasionally refuses to change up.',
+    'There is a harsh, banging shift between 2nd and 3rd.',
+    'The car went into limp mode, stuck in 3rd gear.',
+    'Code P0753 is stored.',
+    'One electrohydraulic valve reads open circuit on a resistance check.',
+    'The electrically operated valve in the valve body that controls one shift has failed.'
+  ]),
+  F('Worn CVT Belt', 'Transmission', 'expert', [
+    'A small hatchback with a continuously variable gearbox feels sluggish.',
+    'A whine rises as the car accelerates.',
+    'Engine rpm flares without a matching increase in speed.',
+    'There is a judder when pulling away lightly from a stop.',
+    'A fluid sample is dark and full of fine metallic particles.',
+    'The steel push belt between the variable pulleys is worn and slipping.'
+  ]),
+  F('Dual-Clutch Mechatronic Unit Failure', 'Transmission', 'expert', [
+    'A dual-clutch car occasionally lurches when pulling away.',
+    'The gear indicator on the dashboard flashes now and then.',
+    'Only the odd-numbered gears are available now.',
+    'A gearbox warning appears and the car drops into limp mode.',
+    'Fault codes point to hydraulic pressure and the pressure accumulator.',
+    'The combined control module and valve body bolted to the gearbox has failed.'
+  ]),
+  F('Worn Outer CV Joint', 'Transmission', 'easy', [
+    'A clicking noise has appeared when turning.',
+    'It is loudest at full lock in car parks.',
+    'It is worst when accelerating while turning.',
+    'Grease is splattered around the inside of the wheel rim.',
+    'The rubber boot on the drive shaft is torn.',
+    'The joint at the wheel end of the drive shaft knocks when rocked by hand.'
+  ]),
+  F('Worn Differential Bearing', 'Transmission', 'hard', [
+    'A hum is heard at speed, rising with road speed.',
+    'Changing gear or engine rpm makes no difference to it.',
+    'It is loudest around 50 mph and changes pitch on and off the throttle.',
+    'On this rear-wheel-drive car it comes from the centre of the rear axle.',
+    'The drained axle oil has metallic glitter in it.',
+    'The pinion bearing preload has gone slack and the bearings feel rough.'
+  ]),
+  F('Worn Universal Joint', 'Transmission', 'medium', [
+    'A clunk is felt when shifting into drive or reverse on a rear-wheel-drive pickup.',
+    'A vibration has appeared at motorway speeds.',
+    'A rhythmic squeak at low speed keeps time with wheel rotation.',
+    'The noise comes from underneath the middle of the vehicle.',
+    'The propshaft can be moved by hand at its yoke.',
+    'The cross-shaped joint has dry, rusty bearing caps.'
+  ]),
+  F('Faulty Transmission Range Sensor', 'Transmission', 'medium', [
+    'The car sometimes will not start in park.',
+    'It starts every time if the selector is moved to neutral.',
+    'The reversing lights do not always come on in reverse.',
+    'The gear display occasionally shows the wrong position.',
+    'Code P0705 is stored.',
+    'The switch on the gearbox that reports selector position is worn and out of adjustment.'
+  ]),
+
+  /* ---------------------------- SUSPENSION ---------------------------- */
+  F('Worn Shock Absorbers', 'Suspension', 'easy', [
+    'The car feels floaty over undulating roads.',
+    'The nose dives noticeably under braking.',
+    'It keeps bouncing after going over speed bumps.',
+    'The tyres show a scalloped, cupped wear pattern.',
+    'There is an oily film down the side of one damper body.',
+    'Pushing down on a corner makes the car oscillate several times before settling.'
+  ]),
+  F('Broken Coil Spring', 'Suspension', 'easy', [
+    'A loud clunk was heard going over a pothole.',
+    'The car now sits slightly lower on one corner.',
+    'A metallic rattle when turning the steering at low speed.',
+    'The tyre rubs on the arch at full lock.',
+    'Ride height measures 25 mm lower on the front left.',
+    'The bottom coil has snapped off and is resting loose on its seat.'
+  ]),
+  F('Worn Anti-Roll Bar Links', 'Suspension', 'easy', [
+    'A knocking noise from the front over uneven roads.',
+    'It is most noticeable at low speed when one wheel at a time hits a bump.',
+    'No noise when driving straight on smooth roads.',
+    'Body roll feels slightly increased in corners.',
+    'The thin links between the anti-roll bar and the strut can be moved by hand.',
+    'The small ball joints at each end of those links are loose with split boots.'
+  ]),
+  F('Worn Lower Ball Joint', 'Suspension', 'medium', [
+    'A dull knock from the front over bumps.',
+    'The steering wanders slightly on the motorway.',
+    'The inner edge of one front tyre is wearing faster.',
+    'The knock is loudest when going down off a kerb.',
+    'With the wheel lifted, levering upward under the tyre shows vertical play.',
+    'The joint connecting the hub knuckle to the bottom arm moves and its boot is split.'
+  ]),
+  F('Worn Control Arm Bushings', 'Suspension', 'medium', [
+    'The steering feels slightly loose under braking.',
+    'There is a clunk from the front when braking hard, then accelerating.',
+    'The car pulls slightly to one side when braking.',
+    'Front tyre wear is uneven.',
+    'A pry bar shows the arm shifting fore and aft at its chassis mounting.',
+    'The rubber pivots of the wishbone are cracked and perished.'
+  ]),
+  F('Failed Wheel Bearing', 'Suspension', 'easy', [
+    'A low drone starts at about 30 mph.',
+    'It gets louder with speed, like distant aircraft noise.',
+    'The pitch changes when weaving gently left and right.',
+    'It is louder when turning right and quieter when turning left.',
+    'With the car lifted, the front left wheel has play and feels rough when spun.',
+    'The hub grinds when rotated by hand; the races are pitted.'
+  ]),
+  F('Air Suspension Leak', 'Suspension', 'hard', [
+    'An SUV sits low on one corner first thing in the morning.',
+    'It rises back to normal after a few minutes of running.',
+    'The compressor runs more often and for longer than it used to.',
+    'A suspension fault warning eventually appears on the dashboard.',
+    'Soapy water sprayed on the rear spring produces a cluster of bubbles.',
+    'The rubber air bellows have perished and cracked at the fold.'
+  ]),
+  F('Failed Air Suspension Compressor', 'Suspension', 'hard', [
+    'An SUV’s ride height adjustment has become very slow.',
+    'The car sinks to its bump stops after a long drive.',
+    'Soapy water tests on every spring and line show no leaks.',
+    'A suspension warning appears along with a loud buzzing from under the car.',
+    'The relay feeding the pump is getting hot and its fuse has blown.',
+    'The pump that inflates the springs is worn out and cannot build pressure.'
+  ]),
+  F('Worn Strut Top Mount', 'Suspension', 'medium', [
+    'A creak or groan from the front when turning the steering while stationary.',
+    'A clunk over bumps that seems to come from high up.',
+    'The steering returns to centre slightly less crisply.',
+    'The noise can be felt with a hand on top of the strut tower while someone turns the wheel.',
+    'The rubber at the top of the strut has separated from its metal plate.',
+    'The bearing plate at the top of the strut has collapsed and binds.'
+  ]),
+  F('Incorrect Wheel Alignment', 'Suspension', 'easy', [
+    'The steering wheel is not quite straight when driving straight.',
+    'The car drifts slightly to the left on a flat road.',
+    'The tyres squeal at low speed on roundabouts.',
+    'The inner edges of both front tyres are wearing faster.',
+    'It started after hitting a kerb hard.',
+    'Measurement on a four-wheel rig shows toe well outside specification.'
+  ]),
+  F('Unbalanced Wheel', 'Suspension', 'easy', [
+    'A vibration comes through the steering wheel.',
+    'It appears around 60 mph and fades at higher speeds.',
+    'It started after new tyres were fitted.',
+    'It is purely speed-related and does not change with braking or acceleration.',
+    'There is a clean rectangular patch on the rim where a weight used to be.',
+    'A spin balancer shows 40 g of imbalance on that wheel.'
+  ]),
+
+  /* ----------------------------- STEERING ----------------------------- */
+  F('Low Power Steering Fluid', 'Steering', 'easy', [
+    'A groaning noise when manoeuvring into a parking space.',
+    'The steering feels slightly notchy near full lock.',
+    'The noise is louder on cold mornings.',
+    'There is a damp, oily patch on the ground under the front of the engine bay.',
+    'The hydraulic reservoir is below its MIN line.',
+    'Topping up the reservoir silences the groan, at least for a while.'
+  ]),
+  F('Failing Power Steering Pump', 'Steering', 'medium', [
+    'The steering feels heavier at parking speeds.',
+    'A whine is heard when turning the wheel.',
+    'The whine gets worse at full lock and with the engine idling.',
+    'The fluid level is correct, but it looks foamy and discoloured.',
+    'A pressure gauge shows low output at idle, which improves slightly with revs.',
+    'The belt-driven hydraulic pump is internally worn.'
+  ]),
+  F('Leaking Power Steering Pressure Hose', 'Steering', 'medium', [
+    'A hot-oil smell after a drive.',
+    'A wet residue on the subframe under the engine.',
+    'The steering goes briefly heavy at full lock.',
+    'The reservoir needs topping up every week.',
+    'The leak is worst when the steering is held against full lock, at maximum pressure.',
+    'The crimped joint on the high-pressure line from the pump is weeping.'
+  ]),
+  F('Worn Tie Rod Ends', 'Steering', 'medium', [
+    'The steering feels slightly vague around the straight-ahead.',
+    'A light knock comes through the steering over rough roads.',
+    'The front tyres are wearing on their edges.',
+    'The alignment will not hold its toe setting.',
+    'Gripping the wheel at 3 and 9 o’clock and rocking it shows play.',
+    'The outer ball joint on the track rod has play.'
+  ]),
+  F('Worn Steering Rack', 'Steering', 'hard', [
+    'A clunk through the steering wheel on rough roads.',
+    'The steering feels notchy around the centre position.',
+    'There is fluid inside one of the rubber gaiters on the rack.',
+    'The play remains even after both track rod ends have been replaced.',
+    'The inner joints and the rack mounting bushes show movement.',
+    'The rack and pinion gear is worn and its seals are leaking into the gaiters.'
+  ]),
+  F('Electric Power Steering Motor Failure', 'Steering', 'hard', [
+    'The steering suddenly became very heavy while driving.',
+    'A steering warning light came on at the same time.',
+    'After restarting, it worked normally again for a while.',
+    'This car has no power steering fluid reservoir.',
+    'Fault codes relate to assist motor current and the motor position signal.',
+    'The electric motor providing the assist has failed internally.'
+  ]),
+  F('Faulty Steering Torque Sensor', 'Steering', 'expert', [
+    'The steering feels uneven: lighter turning left than right.',
+    'With the car stationary and running, the wheel tugs slightly on its own.',
+    'A steering warning light comes and goes.',
+    'Assist motor current and power supply test fine.',
+    'Live data shows a torque reading even with hands off the wheel.',
+    'The sensor that measures how hard the driver twists the column is giving an offset reading.'
+  ]),
+  F('Worn Steering Intermediate Shaft', 'Steering', 'medium', [
+    'A clunk through the steering wheel when turning at low speed.',
+    'It is most noticeable when parking.',
+    'It feels like a click in the hands rather than a noise from the suspension.',
+    'The suspension and track rod ends all check out tight.',
+    'The noise is traced to the driver’s footwell area.',
+    'The universal joint on the shaft between the column and the rack has play.'
+  ]),
+  F('Worn Track Bar (Death Wobble)', 'Steering', 'expert', [
+    'A solid-front-axle 4x4 sometimes shakes violently after hitting a bump at 50 mph.',
+    'The shaking only stops when slowing right down.',
+    'The steering wheel oscillates violently from side to side during the episode.',
+    'It started after a lift kit and larger tyres were fitted.',
+    'While someone rocks the steering wheel, the axle shifts sideways relative to the frame.',
+    'The bar that locates the axle side to side has worn bushes and an elongated bolt hole.'
+  ]),
+
+  /* ---------------------------- ELECTRICAL ---------------------------- */
+  F('Weak 12V Battery', 'Electrical', 'easy', [
+    'The engine is slower to crank on cold mornings.',
+    'The interior lights dim heavily while cranking.',
+    'The battery is about five years old.',
+    'The stop-start system has stopped working.',
+    'The battery reads 12.1 V after resting overnight.',
+    'A load test fails, with cold cranking amps well below the battery’s rating.'
+  ]),
+  F('Failing Alternator', 'Electrical', 'easy', [
+    'The headlights seem to flicker at idle.',
+    'The battery warning light flickers on and off at idle.',
+    'Electrical accessories behave oddly when lots are switched on.',
+    'The car needed two jump starts in a week despite a new battery.',
+    'With the engine running, the battery reads only 12.3 V.',
+    'The belt-driven charging unit is producing almost no output.'
+  ]),
+  F('Failed Alternator Rectifier Diode', 'Electrical', 'expert', [
+    'The battery goes flat overnight, but only some nights.',
+    'The battery itself tests healthy.',
+    'The headlights pulse faintly at idle.',
+    'Charging voltage is a little low, at 13.2 V.',
+    'An oscilloscope shows more than 0.5 V of AC ripple on the charging line.',
+    'One diode in the charging unit’s rectifier bridge has failed.'
+  ]),
+  F('Faulty Starter Motor', 'Electrical', 'easy', [
+    'The car sometimes does not start first time.',
+    'Turning the key gives a single loud click and nothing else.',
+    'The dashboard lights stay bright while trying to start.',
+    'A tap on the unit at the bottom of the engine gets it going again.',
+    'The battery tests healthy and the main cables are good.',
+    'The brushes and solenoid contacts in the cranking motor are worn out.'
+  ]),
+  F('Corroded Battery Terminals', 'Electrical', 'easy', [
+    'The car sometimes struggles to start.',
+    'Electrical problems come and go without pattern.',
+    'Wiggling something under the bonnet brings the dashboard back to life.',
+    'There is white and green powder on top of the battery.',
+    'A voltage drop test shows 0.8 V lost across the positive clamp.',
+    'Cleaning the clamps and posts restores normal operation.'
+  ]),
+  F('Parasitic Battery Drain', 'Electrical', 'hard', [
+    'The car is fine with daily use but flat after a long weekend.',
+    'A new battery and the alternator both test fine.',
+    'The problem began after an aftermarket dashcam was fitted.',
+    'An ammeter shows 350 mA being drawn 45 minutes after locking.',
+    'Pulling fuses one at a time, the draw drops when the accessory circuit fuse is removed.',
+    'A circuit is staying awake and draining the battery while the car is off.'
+  ]),
+  F('Bad Engine Ground Strap', 'Electrical', 'hard', [
+    'The gauges flicker when the engine is started.',
+    'The headlights dim noticeably when the cooling fan cuts in.',
+    'Cranking is slow even with a brand-new battery.',
+    'The radio crackles in time with engine revs.',
+    'Voltage drop between engine block and battery negative is 1.2 V while cranking.',
+    'The braided strap between the engine and the chassis is corroded through.'
+  ]),
+  F('Faulty Brake Light Switch', 'Electrical', 'medium', [
+    'Cruise control refuses to engage.',
+    'On this automatic, the selector sometimes will not come out of park.',
+    'A friend following behind says the rear lights do not light up when you slow down.',
+    'Bulbs and fuses all test good.',
+    'Live data shows the brake pedal status never changes when pressed.',
+    'The switch at the top of the brake pedal arm has failed.'
+  ]),
+  F('Failed Window Regulator', 'Electrical', 'easy', [
+    'The driver’s window is slower than the others.',
+    'There is a grinding noise when it moves.',
+    'The window dropped into the door with a clunk.',
+    'The motor can be heard running but the glass does not move.',
+    'The glass can be pushed down by hand.',
+    'The cable in the lifting mechanism inside the door has snapped.'
+  ]),
+  F('Faulty Ignition Switch', 'Electrical', 'medium', [
+    'The car occasionally stalls when driving over bumps.',
+    'The dashboard flickers when the key is jiggled.',
+    'The radio cuts out intermittently.',
+    'A heavy bunch of keys hangs from the ignition key.',
+    'Wiggling the key in the run position kills the engine.',
+    'The electrical contacts behind the key barrel are worn.'
+  ]),
+  F('Failed Clock Spring', 'Electrical', 'medium', [
+    'The horn has stopped working.',
+    'The steering wheel buttons are intermittently unresponsive.',
+    'The airbag warning light is now on.',
+    'Faults appear or disappear as the steering is turned.',
+    'Code B0001 is stored: high resistance in the driver frontal airbag circuit.',
+    'The coiled ribbon cable behind the steering wheel has broken.'
+  ]),
+  F('CAN Bus Communication Fault', 'Electrical', 'expert', [
+    'Several warning lights appear on the dashboard at the same moment.',
+    'The gauges drop to zero for a second while driving.',
+    'The radio, climate control and instrument cluster all reboot.',
+    'Many U-codes for lost communication are stored across different modules.',
+    'Resistance across the two network wires measures 120 Ω instead of 60 Ω.',
+    'A chafed twisted-pair network wire near the door hinge has cut off a terminating module.'
+  ]),
+  F('Faulty Door Lock Actuator', 'Electrical', 'easy', [
+    'Remote locking has become inconsistent.',
+    'One rear door does not lock with the key fob.',
+    'A weak buzzing comes from that door when locking.',
+    'All the other doors work fine.',
+    'The door locks normally using the interior button by hand.',
+    'The small motor in that door’s latch mechanism is worn out.'
+  ]),
+
+  /* ------------------------------ COOLING ----------------------------- */
+  F('Thermostat Stuck Open', 'Cooling', 'easy', [
+    'The heater takes ages to get warm in winter.',
+    'The temperature gauge sits lower than usual on the motorway.',
+    'Fuel economy is slightly worse in cold weather.',
+    'Code P0128 is stored: coolant temperature below regulating temperature.',
+    'The top radiator hose gets warm within a minute of a cold start.',
+    'The wax-element valve is stuck permanently open.'
+  ]),
+  F('Thermostat Stuck Closed', 'Cooling', 'medium', [
+    'The temperature gauge climbs quickly after start-up.',
+    'The engine overheats even on short trips.',
+    'The heater still blows very hot air.',
+    'The top radiator hose stays cold while the engine is clearly hot.',
+    'Coolant is full, there are no leaks and the fan is running.',
+    'The valve between the engine and radiator will not open.'
+  ]),
+  F('Failing Water Pump', 'Cooling', 'medium', [
+    'A faint whirring or grinding from the front of the engine.',
+    'The coolant level drops slowly over a few weeks.',
+    'There is crusty coolant residue beneath a small weep hole.',
+    'Temperature creeps up when idling in traffic.',
+    'The pulley wobbles when rocked by hand.',
+    'The bearing is worn and the shaft seal of the coolant pump is leaking.'
+  ]),
+  F('Radiator Fan Failure', 'Cooling', 'medium', [
+    'The car runs perfectly on the motorway.',
+    'The temperature climbs in stop-start traffic.',
+    'The air conditioning blows warm when stationary.',
+    'The gauge drops back as soon as the car starts moving.',
+    'No fan noise can be heard when the engine is hot or the AC is on.',
+    'Applying 12 V directly to the electric fan produces nothing: its motor is seized.'
+  ]),
+  F('Clogged Radiator', 'Cooling', 'medium', [
+    'The engine runs hotter than normal on warm days.',
+    'It overheats when towing or climbing long hills.',
+    'The coolant looks brown and rusty.',
+    'An infrared thermometer shows cold patches across the core.',
+    'The fan and thermostat both work correctly.',
+    'The internal tubes of the radiator are blocked with scale.'
+  ]),
+  F('Faulty Radiator Cap', 'Cooling', 'hard', [
+    'A coolant smell after a drive.',
+    'A small puddle appears near the overflow outlet after parking.',
+    'The upper hose collapses inward once the engine cools down.',
+    'The engine boils over easily on hot days.',
+    'A combustion leak test is negative; no exhaust gas in the coolant.',
+    'A pressure test of the cap shows it will not hold its rated pressure.'
+  ]),
+  F('Air Lock in Cooling System', 'Cooling', 'medium', [
+    'The coolant was changed recently.',
+    'The heater blows cold at idle but warm when revved.',
+    'The temperature gauge swings up and down.',
+    'A gurgling noise comes from behind the dashboard.',
+    'The coolant level drops after the first few drives as bubbles escape.',
+    'A trapped air pocket is stopping coolant from circulating properly.'
+  ]),
+  F('Cracked Coolant Expansion Tank', 'Cooling', 'easy', [
+    'A sweet smell after driving.',
+    'Small pink puddles under the front of the car.',
+    'The coolant level drops every few days.',
+    'There is a dried crust along a seam of the plastic reservoir.',
+    'A cooling system pressure test shows the leak at the reservoir.',
+    'The plastic tank has a hairline crack along its seam.'
+  ]),
+  F('Failed Viscous Fan Clutch', 'Cooling', 'hard', [
+    'A rear-wheel-drive pickup runs hot in summer traffic.',
+    'It is perfectly fine on the open road.',
+    'The air conditioning is weaker at idle.',
+    'With the engine off, the belt-driven fan spins freely with almost no resistance.',
+    'When hot, the fan does not roar for a moment after start-up as it should.',
+    'The silicone fluid coupling that drives the fan has leaked out.'
+  ]),
+  F('Leaking Coolant Hose', 'Cooling', 'easy', [
+    'A sweet smell around the car after a drive.',
+    'Steam rose from the bonnet after a long climb.',
+    'The coolant level keeps dropping.',
+    'Drips land under the front of the engine.',
+    'One rubber hose feels soft and swollen near its clamp.',
+    'That hose has split right at the clamp.'
+  ]),
+
+  /* ------------------------------ BRAKES ------------------------------ */
+  F('Worn Brake Pads', 'Brakes', 'easy', [
+    'A faint squeal when braking lightly.',
+    'The squeal goes away when braking harder.',
+    'Brake pedal travel feels slightly longer than before.',
+    'The brake wear warning light has come on.',
+    'A metal wear indicator tab is touching the disc.',
+    'The friction material is down to 2 mm.'
+  ]),
+  F('Warped Brake Discs', 'Brakes', 'easy', [
+    'The steering wheel shakes when braking from high speed.',
+    'A pulsing can be felt through the brake pedal.',
+    'It is worse after long downhill descents.',
+    'It started after an emergency stop from motorway speed.',
+    'A dial gauge shows run-out on the front rotors.',
+    'The discs have significant thickness variation.'
+  ]),
+  F('Seized Brake Caliper', 'Brakes', 'medium', [
+    'The car pulls to one side.',
+    'There is a burning smell after driving.',
+    'One wheel is far hotter than the others after a drive.',
+    'That wheel is coated in much more brake dust.',
+    'The car feels as though it is dragging, and economy has dropped.',
+    'The piston will not retract when pushed back.'
+  ]),
+  F('Air in Brake Lines', 'Brakes', 'medium', [
+    'The brake pedal feels soft and spongy.',
+    'Pumping the pedal a few times firms it up.',
+    'Brake work was done recently.',
+    'There are no visible leaks and the fluid is full.',
+    'The pedal sinks further than normal before the brakes bite.',
+    'Bubbles escape from the bleed nipple: the system was not purged properly.'
+  ]),
+  F('Failing Brake Master Cylinder', 'Brakes', 'hard', [
+    'The brake pedal slowly sinks when held at traffic lights.',
+    'No external leak can be found.',
+    'The fluid level in the reservoir is steady.',
+    'Pumping the pedal does not help; it keeps sinking.',
+    'Clamping individual brake hoses does not change the symptom.',
+    'The internal piston seals in the pedal-driven cylinder are bypassing.'
+  ]),
+  F('Leaking Rear Wheel Cylinder', 'Brakes', 'medium', [
+    'The brake fluid level has dropped slightly over a few months.',
+    'The pedal sits a little lower than before.',
+    'The inner sidewall of one rear tyre is wet.',
+    'This car has drum brakes on the rear.',
+    'The brake shoes are contaminated with fluid.',
+    'The hydraulic cylinder inside the drum is weeping.'
+  ]),
+  F('Brake Booster Vacuum Leak', 'Brakes', 'hard', [
+    'The brake pedal feels hard and needs more effort.',
+    'A hissing noise from under the dashboard when braking.',
+    'The idle drops when the brakes are applied.',
+    'Stopping distances feel longer.',
+    'With the engine off, pump the pedal, hold it and start the engine: the pedal does not drop.',
+    'The diaphragm inside the servo is torn.'
+  ]),
+  F('Sticking Caliper Slide Pins', 'Brakes', 'medium', [
+    'A faint squeal when braking.',
+    'The car pulls slightly under braking.',
+    'One front wheel is a little warmer than the other after a drive.',
+    'The pads are wearing into a taper.',
+    'The inner pad is worn to the backing plate while the outer is half worn.',
+    'The guides on the caliper bracket are dry and corroded, so the caliper cannot float.'
+  ]),
+  F('Glazed Brake Pads', 'Brakes', 'hard', [
+    'The brakes do not bite as sharply as they used to.',
+    'More pedal pressure is needed for the same stopping power.',
+    'A squeal at low speed.',
+    'There is still plenty of pad material left.',
+    'The pad surface is shiny and glassy.',
+    'The pads were overheated by riding the brakes down a long hill.'
+  ]),
+  F('Seized Parking Brake Cable', 'Brakes', 'easy', [
+    'After being parked for a while in winter, the car felt reluctant to move.',
+    'One rear wheel is hot after driving.',
+    'The handbrake lever does not return fully.',
+    'The rear brakes are binding.',
+    'The lever on the rear caliper will not return to its stop.',
+    'The inner cable has rusted inside its outer sheath.'
+  ]),
+  F('ABS Modulator Failure', 'Brakes', 'expert', [
+    'ABS and traction control warning lights are on.',
+    'The brakes otherwise work normally.',
+    'All four wheel speed sensors read correctly in live data.',
+    'There is no pump whirr at start-up self-test.',
+    'Codes are stored for the pump motor and valve circuits.',
+    'The hydraulic control unit and pump have failed.'
+  ]),
+
+  /* ---------------------------- FUEL SYSTEM --------------------------- */
+  F('Clogged Fuel Filter', 'Fuel System', 'medium', [
+    'The car hesitates at high speed and under load.',
+    'It is fine at idle and light throttle.',
+    'It is worse going uphill.',
+    'The fuel pump sounds louder than usual.',
+    'Fuel pressure drops under load and the flow volume test is low.',
+    'The filter element is clogged with debris.'
+  ]),
+  F('Failing Fuel Pump', 'Fuel System', 'medium', [
+    'The car sometimes takes longer to start.',
+    'The engine sputters at high speed.',
+    'A whining noise comes from under the rear seats.',
+    'The car died and would not restart, then started after cooling down.',
+    'Tapping the fuel tank gets it going.',
+    'There is zero fuel pressure at the rail.'
+  ]),
+  F('Faulty Fuel Pressure Regulator', 'Fuel System', 'hard', [
+    'Black smoke at idle.',
+    'A fuel smell around the car.',
+    'Fuel economy has dropped noticeably.',
+    'Liquid fuel is found inside a vacuum hose.',
+    'Fuel pressure does not change when vacuum is applied or removed.',
+    'The diaphragm in the regulator has ruptured.'
+  ]),
+  F('Clogged Fuel Injector', 'Fuel System', 'medium', [
+    'A slight hesitation off idle.',
+    'The idle is rough.',
+    'Code P0304 is stored: misfire on cylinder 4.',
+    'Swapping the coil and plug does not move the misfire.',
+    'A balance test shows a low pressure drop for that cylinder.',
+    'The spray pattern of the injector is poor and dribbling.'
+  ]),
+  F('Leaking Fuel Injector', 'Fuel System', 'hard', [
+    'Long cranking after the car has been parked hot.',
+    'A fuel smell from the engine bay.',
+    'A misfire on start-up that clears.',
+    'Rail pressure drops quickly after shutdown.',
+    'The spark plug of one cylinder is fuel-fouled.',
+    'One injector drips when it should be closed.'
+  ]),
+  F('Water Contaminated Fuel', 'Fuel System', 'medium', [
+    'The car started running poorly just after refuelling.',
+    'Hesitation and stuttering under acceleration.',
+    'Several random misfire codes are stored.',
+    'Other customers who used the same filling station have complained.',
+    'A fuel sample separates into two layers in a glass jar.',
+    'There is water in the tank.'
+  ]),
+  F('Failed Glow Plugs', 'Fuel System', 'medium', [
+    'A diesel car is hard to start on cold mornings.',
+    'It starts fine once warm.',
+    'White smoke at cold start.',
+    'The coil-shaped warning light flashes on the dash.',
+    'A resistance test shows open circuit on two cylinders.',
+    'The heater plugs have failed.'
+  ]),
+  F('High Pressure Fuel Pump Failure', 'Fuel System', 'expert', [
+    'A direct-injection petrol engine has started taking a long time to crank.',
+    'There is a lack of power at high rpm.',
+    'Code P0087 is stored: fuel rail pressure too low.',
+    'The in-tank lift pump side tests fine.',
+    'Rail pressure never reaches its target under load.',
+    'The cam-driven pump has a worn follower and cannot build pressure.'
+  ]),
+  F('Wrong Fuel (Petrol in Diesel)', 'Fuel System', 'easy', [
+    'The car began running poorly shortly after refuelling.',
+    'A knocking noise from the engine.',
+    'Smoke from the exhaust.',
+    'The car stalled a few miles from the station.',
+    'The receipt shows unleaded was purchased.',
+    'The fuel sample smells of petrol and is thin and clear, not oily.'
+  ]),
+  F('Failed Fuel Pump Relay', 'Fuel System', 'medium', [
+    'The car occasionally does not start.',
+    'It cranks normally when it fails.',
+    'There is no buzz from the rear when the ignition is switched on.',
+    'Tapping the fuse box makes it start.',
+    'The pump runs when powered directly.',
+    'The relay contacts are burnt.'
+  ]),
+  F('Excessive Diesel Injector Leak-Off', 'Fuel System', 'expert', [
+    'A common-rail diesel takes a long time to start when warm.',
+    'Rough idle with knocking.',
+    'Code P0087 is stored: rail pressure low.',
+    'The high-pressure pump tests fine.',
+    'A leak-off test shows one injector returning far more fuel than the others.',
+    'That injector’s internal control valve is worn.'
+  ]),
+
+  /* ------------------------------ SENSORS ----------------------------- */
+  F('Faulty Mass Air Flow Sensor', 'Sensors', 'medium', [
+    'The vehicle feels slightly sluggish during acceleration.',
+    'Fuel economy has become worse than usual.',
+    'The issue is more noticeable during motorway driving.',
+    'The engine occasionally hesitates when the throttle is applied.',
+    'The check engine light is illuminated, and unplugging a sensor in the intake makes it run better.',
+    'Common fault code P0101 involves incorrect air intake readings.'
+  ]),
+  F('Faulty Upstream Oxygen Sensor', 'Sensors', 'medium', [
+    'Fuel economy is gradually getting worse.',
+    'A slight rough idle.',
+    'Check engine light with P0133: slow response.',
+    'The exhaust smells rich.',
+    'Live data shows the sensor voltage switching slowly.',
+    'The lambda probe before the catalytic converter is contaminated.'
+  ]),
+  F('Failed Crankshaft Position Sensor', 'Sensors', 'medium', [
+    'The engine stalls randomly once warm.',
+    'It restarts after cooling down for a while.',
+    'The rev counter stays at zero while cranking.',
+    'There is no spark and no injector pulse.',
+    'Code P0335 is stored.',
+    'The sensor reading the flywheel teeth has failed.'
+  ]),
+  F('Faulty Camshaft Position Sensor', 'Sensors', 'medium', [
+    'The car takes a few extra seconds to start.',
+    'It occasionally stalls.',
+    'Rough running and reduced power.',
+    'Code P0340 is stored.',
+    'The crankshaft signal is present and correct.',
+    'The sensor at the cylinder head has failed.'
+  ]),
+  F('Faulty Coolant Temperature Sensor', 'Sensors', 'medium', [
+    'Hard starting when cold.',
+    'Black smoke on start-up.',
+    'The radiator fan runs constantly.',
+    'The temperature gauge behaves erratically.',
+    'Live data shows -40 °C on a fully warm engine.',
+    'The sensor in the thermostat housing has failed.'
+  ]),
+  F('Faulty Throttle Position Sensor', 'Sensors', 'hard', [
+    'A hesitation at one particular throttle opening.',
+    'The idle is unstable.',
+    'The automatic gearbox shifts erratically.',
+    'Code P0122 is stored.',
+    'A slow sweep on the oscilloscope shows the signal dropping out at one point.',
+    'The potentiometer on the throttle shaft has a worn track.'
+  ]),
+  F('Faulty ABS Wheel Speed Sensor', 'Sensors', 'easy', [
+    'The ABS warning light is on.',
+    'The traction control light comes on too.',
+    'The brakes work fine otherwise.',
+    'ABS activates at low speed on dry roads.',
+    'Live data shows one wheel reading zero speed.',
+    'The sensor at that hub is damaged.'
+  ]),
+  F('Failed Knock Sensor', 'Sensors', 'hard', [
+    'Power feels down.',
+    'Fuel economy is slightly worse.',
+    'Code P0325 is stored.',
+    'Ignition timing is permanently retarded in live data.',
+    'The engine is mechanically sound.',
+    'The piezo sensor bolted to the block is open circuit.'
+  ]),
+  F('Faulty MAP Sensor', 'Sensors', 'hard', [
+    'Rough running.',
+    'Black smoke under acceleration.',
+    'Poor fuel economy.',
+    'Code P0106 is stored.',
+    'The reading does not change when vacuum is applied with a hand pump.',
+    'The manifold absolute pressure sensor has failed.'
+  ]),
+  F('Dead TPMS Sensor Battery', 'Sensors', 'easy', [
+    'The tyre pressure warning is on.',
+    'All tyres are at the correct pressure.',
+    'The light flashes for a minute, then stays solid.',
+    'The car is 8 years old and still on its original valve sensors.',
+    'A scan tool cannot read one wheel.',
+    'The battery in the valve-stem sensor is depleted.'
+  ]),
+  F('Steering Angle Sensor Not Calibrated', 'Sensors', 'expert', [
+    'After a wheel alignment, a stability warning appears.',
+    'Traction control intervenes oddly in bends.',
+    'Lane keep assist pulls the wheel slightly.',
+    'A chassis code relating to steering angle plausibility is stored.',
+    'Live data shows 15 degrees with the wheel pointing straight.',
+    'It needs a zero-point calibration after the alignment.'
+  ]),
+  F('Faulty Accelerator Pedal Position Sensor', 'Sensors', 'hard', [
+    'The car occasionally does not respond to the throttle.',
+    'It has gone into limp mode.',
+    'Throttle response lags.',
+    'Code P2138 is stored: correlation fault.',
+    'Sweeping both signal tracks shows one dropping out.',
+    'The sensor in the pedal assembly is worn.'
+  ]),
+
+  /* ----------------------------- EMISSIONS ---------------------------- */
+  F('Failed Catalytic Converter', 'Emissions', 'medium', [
+    'The car feels lethargic.',
+    'A rotten egg smell from the exhaust.',
+    'A rattle from underneath on start-up.',
+    'Code P0420 is stored.',
+    'The downstream oxygen sensor signal mirrors the upstream one.',
+    'The honeycomb substrate has collapsed.'
+  ]),
+  F('Clogged Diesel Particulate Filter', 'Emissions', 'medium', [
+    'A diesel used mainly for short trips.',
+    'A loss of power.',
+    'The fan runs on after switch-off frequently.',
+    'A warning light with an exhaust symbol.',
+    'The differential pressure reading is high.',
+    'The filter is loaded with soot.'
+  ]),
+  F('EGR Valve Stuck Open', 'Emissions', 'hard', [
+    'Rough idle and stalling.',
+    'Hesitation pulling away.',
+    'Black smoke on this diesel.',
+    'Idle smooths out when the valve’s connector is unplugged.',
+    'Code P0404 is stored: range/performance.',
+    'The valve is stuck open with carbon.'
+  ]),
+  F('Clogged EGR Passages', 'Emissions', 'hard', [
+    'Pinging or knocking under load.',
+    'Higher NOx readings at the emissions test.',
+    'Code P0401 is stored: insufficient flow.',
+    'The valve itself moves when commanded.',
+    'There is no rpm drop when the valve is opened at idle.',
+    'The passages are choked with carbon.'
+  ]),
+  F('EVAP Purge Valve Stuck Open', 'Emissions', 'hard', [
+    'The car is hard to start after refuelling.',
+    'Rough idle right after a fill-up.',
+    'Code P0496 is stored.',
+    'A fuel smell.',
+    'There is vacuum at the canister side of the purge line with the engine idling and the valve unpowered.',
+    'The purge solenoid is stuck open.'
+  ]),
+  F('Loose or Faulty Fuel Cap', 'Emissions', 'easy', [
+    'The check engine light came on the day after refuelling.',
+    'The car drives normally.',
+    'A faint fuel smell near the rear of the car.',
+    'Code P0457 is stored.',
+    'The cap only clicks once instead of ratcheting.',
+    'The cap seal is cracked and was not tightened properly.'
+  ]),
+  F('Exhaust Manifold Leak', 'Emissions', 'medium', [
+    'A ticking noise on cold start.',
+    'It quietens as the engine warms up.',
+    'It is louder under acceleration.',
+    'There is a black soot streak on the engine.',
+    'A smell of exhaust in the engine bay.',
+    'The manifold is cracked or its gasket has blown.'
+  ]),
+  F('AdBlue (SCR) System Fault', 'Emissions', 'hard', [
+    'A diesel shows a countdown warning to no-restart.',
+    'The tank is full of fluid.',
+    'There are white crystals around the dosing injector.',
+    'The NOx sensor reading is high.',
+    'The dosing pump pressure is low.',
+    'The diesel exhaust fluid injector has crystallised.'
+  ]),
+  F('Failed Secondary Air Injection Pump', 'Emissions', 'expert', [
+    'A check engine light came on with no drivability issues.',
+    'Code P0411 is stored.',
+    'The car drives fine.',
+    'The fault only sets after cold starts.',
+    'The air pump is full of moisture because its check valve failed.',
+    'The electric pump that blows fresh air into the exhaust has seized.'
+  ]),
+  F('EVAP Canister Vent Valve Failure', 'Emissions', 'expert', [
+    'The pump nozzle keeps clicking off when refuelling.',
+    'The check engine light is on.',
+    'Code P0446 is stored.',
+    'A hiss of vacuum when the fuel cap is removed.',
+    'Commanding the vent valve open makes no difference.',
+    'The vent solenoid near the charcoal canister is stuck closed.'
+  ]),
+
+  /* ------------------------------- HVAC ------------------------------- */
+  F('Low AC Refrigerant', 'HVAC', 'easy', [
+    'The air conditioning blows cool but not cold.',
+    'It got worse over the course of the summer.',
+    'The compressor cycles on and off frequently.',
+    'There is oily residue at a pipe joint.',
+    'Both low side and high side pressures are low.',
+    'The system is undercharged.'
+  ]),
+  F('Failed AC Compressor Clutch', 'HVAC', 'medium', [
+    'The air conditioning suddenly stopped blowing cold.',
+    'The fan works fine.',
+    'There is no click when the AC button is pressed.',
+    'The front hub of the compressor is not spinning while the pulley spins.',
+    'The air gap is excessive and the coil is open circuit.',
+    'The electromagnetic clutch has failed.'
+  ]),
+  F('Failed Blower Motor Resistor', 'HVAC', 'easy', [
+    'The heater fan only works on its highest setting.',
+    'The lower speeds are dead.',
+    'It happened suddenly.',
+    'The fuse is fine.',
+    'A component behind the glovebox has a burnt connector.',
+    'The resistor pack’s thermal fuse has blown.'
+  ]),
+  F('Faulty Blend Door Actuator', 'HVAC', 'medium', [
+    'A clicking from behind the dashboard.',
+    'The temperature does not change when adjusted.',
+    'One side of the cabin blows hot and the other cold.',
+    'A knocking tick after start-up.',
+    'The gears inside the small motor are stripped.',
+    'The actuator controlling the hot/cold flap has failed.'
+  ]),
+  F('Clogged Cabin Air Filter', 'HVAC', 'easy', [
+    'The airflow is weak at all fan speeds.',
+    'A musty smell.',
+    'The windows fog up more than usual.',
+    'The fan is loud but little air comes out.',
+    'It has not been changed in three years.',
+    'The pleated element behind the glovebox is full of leaves.'
+  ]),
+  F('Leaking Heater Core', 'HVAC', 'medium', [
+    'A sweet smell inside the cabin.',
+    'The windscreen fogs up with a greasy film.',
+    'The passenger carpet is damp.',
+    'The coolant level is dropping.',
+    'The fluid on the carpet is coolant.',
+    'The small radiator behind the dashboard is leaking.'
+  ]),
+  F('Blocked AC Evaporator Drain', 'HVAC', 'easy', [
+    'A water sloshing sound when braking or turning.',
+    'The passenger footwell gets wet on hot days.',
+    'The water is clear and odourless.',
+    'There is no puddle under the car when the AC is running.',
+    'Blowing air up the small rubber outlet on the bulkhead releases a gush of water.',
+    'The condensate drain from the evaporator housing is blocked with debris.'
+  ]),
+  F('Damaged AC Condenser', 'HVAC', 'medium', [
+    'The air conditioning stopped working after a minor front bump.',
+    'The compressor disengages after a short time.',
+    'The pressure is low.',
+    'UV dye shows at the front of the car.',
+    'The fins are bent and there is an oily patch.',
+    'The heat exchanger in front of the radiator is punctured.'
+  ]),
+  F('Faulty AC Expansion Valve', 'HVAC', 'expert', [
+    'The air conditioning goes cold, then warm, in cycles.',
+    'There is frost on the pipes at the bulkhead.',
+    'Pressures: low side very low, high side high.',
+    'The charge is correct by weight.',
+    'The evaporator is iced up.',
+    'The metering valve at the bulkhead is stuck.'
+  ]),
+  F('Mould on AC Evaporator', 'HVAC', 'medium', [
+    'A musty smell when the AC is first turned on.',
+    'It fades after a few minutes.',
+    'It is worse in humid weather.',
+    'A new cabin filter does not help.',
+    'The smell comes from the vents.',
+    'There is bacterial growth on the cooling core.'
+  ]),
+
+  /* ---------------------------- HYBRID & EV --------------------------- */
+  F('Degraded Hybrid Battery Module', 'Hybrid & EV', 'hard', [
+    'The hybrid’s fuel economy has dropped noticeably.',
+    'The engine runs more often than it used to.',
+    'The battery gauge swings quickly between full and empty.',
+    'A red triangle warning has appeared.',
+    'Block voltages show one pair 0.4 V lower than the rest.',
+    'One module of the traction battery has degraded.'
+  ]),
+  F('Flat 12V Auxiliary Battery (EV)', 'Hybrid & EV', 'medium', [
+    'An electric car will not wake up in the morning.',
+    'The doors will not unlock with the fob.',
+    'The main traction battery is at 80%.',
+    'Jump-starting the small battery under the bonnet powers it up.',
+    'The 4-year-old low-voltage battery reads 10.5 V.',
+    'The 12 V battery is flat.'
+  ]),
+  F('Failed Inverter Coolant Pump', 'Hybrid & EV', 'expert', [
+    'A hybrid shows warning lights on a hot day.',
+    'Reduced power.',
+    'Code P0A93 is stored: inverter cooling system performance.',
+    'The coolant level is fine in the second reservoir.',
+    'There is no flow in the inverter reservoir with the car in ready mode.',
+    'The electric pump cooling the inverter has failed.'
+  ]),
+  F('Clogged Hybrid Battery Cooling Fan', 'Hybrid & EV', 'hard', [
+    'A hybrid feels sluggish in summer.',
+    'The engine runs more.',
+    'The owner has a dog that rides on the rear seat.',
+    'Battery temperature is high.',
+    'A battery cooling performance code is stored.',
+    'The fan intake vent is clogged with pet hair.'
+  ]),
+  F('Faulty Onboard Charger', 'Hybrid & EV', 'hard', [
+    'An EV charges fine at rapid chargers.',
+    'The home wall box does not charge it.',
+    'Trying a different charger and cable still fails.',
+    'Charging stops a few minutes in with an error.',
+    'An AC charging fault code is stored.',
+    'The unit converting AC to DC for the battery has failed.'
+  ]),
+  F('Charge Port Lock Actuator Failure', 'Hybrid & EV', 'medium', [
+    'The charging cable sometimes will not release.',
+    'Charging fails to start and says the cable is not locked.',
+    'It is worse in cold weather.',
+    'Clicking at the port.',
+    'The locking pin does not extend.',
+    'The latch actuator in the charge port has failed.'
+  ]),
+  F('Corroded Brakes from Regenerative Braking', 'Hybrid & EV', 'medium', [
+    'An EV’s brakes feel weak when stopping hard.',
+    'A grinding noise when braking.',
+    'The owner uses one-pedal driving almost all the time.',
+    'The discs are heavily rusted with a lip.',
+    'The pads are glazed and the pistons sticky.',
+    'The friction brakes are rarely used and have corroded.'
+  ]),
+  F('High Voltage Isolation Fault', 'Hybrid & EV', 'expert', [
+    'An EV will not go into ready mode after a car wash.',
+    'A warning to stop safely appears.',
+    'It is worse in wet weather.',
+    'Code P0AA6 is stored.',
+    'An insulation resistance test is low on the AC compressor.',
+    'The insulation between the high-voltage circuit and the chassis has broken down.'
+  ]),
+  F('Worn EV Drive Unit Bearing', 'Hybrid & EV', 'hard', [
+    'An EV has developed a faint whine.',
+    'It rises with speed.',
+    'It is unaffected by power or regen.',
+    'The wheel bearings check out fine.',
+    'A stethoscope on the motor housing picks it up.',
+    'The rotor bearing in the drive unit is worn.'
+  ]),
+  F('Failed DC-DC Converter', 'Hybrid & EV', 'expert', [
+    'An EV’s 12 V battery goes flat repeatedly despite being replaced.',
+    'The lights dim while driving.',
+    'A low voltage warning light.',
+    'The 12 V battery reads 12.2 V with the car in ready mode.',
+    'There is no output from the converter.',
+    'The converter that steps high voltage down to 12 V has failed.'
+  ]),
+];
+
+/* Plausible decoys that are NOT the answer to any scenario.
+ * They widen the diagnosis list so the player has to reason, not eliminate. */
+const EXTRA_DIAGNOSES = [
+  ['Faulty Instrument Cluster', 'Electrical'], ['Failed Wiper Motor', 'Electrical'],
+  ['Faulty Horn Relay', 'Electrical'], ['Failed Heated Seat Element', 'Electrical'],
+  ['Faulty Headlight Levelling Motor', 'Electrical'], ['Faulty Cooling Fan Relay', 'Cooling'],
+  ['Worn Drum Brake Shoes', 'Brakes'], ['Failed Brake Fluid Level Sensor', 'Brakes'],
+  ['Leaking Rear Main Seal', 'Engine'], ['Leaking Sump Gasket', 'Engine'],
+  ['Faulty Oil Pressure Sensor', 'Sensors'], ['Failed Belt Tensioner', 'Engine'],
+  ['Faulty Variable Valve Timing Solenoid', 'Engine'], ['Sticking Turbo Wastegate Actuator', 'Engine'],
+  ['Faulty Idle Air Control Valve', 'Engine'], ['Failed Flywheel Ring Gear', 'Transmission'],
+  ['Faulty Fuel Level Sender', 'Fuel System'], ['Blocked Fuel Tank Vent', 'Fuel System'],
+  ['Faulty Intake Air Temperature Sensor', 'Sensors'], ['Faulty Ambient Temperature Sensor', 'Sensors'],
+  ['Failed NOx Sensor', 'Emissions'], ['Failed EGR Cooler', 'Emissions'],
+  ['Broken Exhaust Hanger', 'Emissions'], ['Faulty Heater Control Valve', 'HVAC'],
+  ['Failed Blower Motor', 'HVAC'], ['Blocked Sunroof Drains', 'Electrical'],
+  ['Worn Rack Gaiter', 'Steering'], ['Faulty Radar Sensor (Adaptive Cruise)', 'Sensors'],
+  ['Weak High Voltage Contactor', 'Hybrid & EV'], ['Worn Leaf Spring Bushes', 'Suspension'],
+  ['Failed Thermostat Housing', 'Cooling'], ['Worn Gear Selector Cable', 'Transmission']
+];
+
+/* Ranks for Career Mode: XP threshold and the difficulties unlocked. */
+const RANKS = [
+  { name: 'Apprentice',        xp: 0,    unlocks: ['easy'] },
+  { name: 'Junior Technician', xp: 600,  unlocks: ['easy', 'medium'] },
+  { name: 'Technician',        xp: 1800, unlocks: ['easy', 'medium', 'hard'] },
+  { name: 'Senior Technician', xp: 4000, unlocks: ['easy', 'medium', 'hard', 'expert'] },
+  { name: 'Master Technician', xp: 8000, unlocks: ['easy', 'medium', 'hard', 'expert'] }
+];
+
+const POINTS = [100, 80, 60, 40, 20, 10];
+const DIFF_MULT = { easy: 1, medium: 1.25, hard: 1.5, expert: 2 };
+
+</script>
+<script>
+'use strict';
+/* =====================================================================
+ * FAULTLE: app logic
+ * Sections: Utilities · Data prep · Storage · Sound · Daily seed ·
+ *           Ranks & achievements · Round engine · Timer · Rendering ·
+ *           Autocomplete · Modals · Share · Boot
+ * ===================================================================== */
+
+/* ============================ UTILITIES ============================ */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+const fmt = n => Number(n).toLocaleString('en-GB');
+
+/** Deterministic PRNG so the daily order is identical for everyone. */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/** Local-calendar date key, e.g. 2026-11-18. */
+function dateKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function addDays(key, n) {
+  const [y, m, d] = key.split('-').map(Number);
+  return dateKey(new Date(y, m - 1, d + n));
+}
+function levenshtein(a, b) {
+  const dp = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = dp[0]; dp[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = dp[j];
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return dp[b.length];
+}
+
+/* ============================ DATA PREP ============================ */
+FAULTS.forEach(f => { f.id = slug(f.diagnosis); });
+const FAULT_BY_ID = new Map(FAULTS.map(f => [f.id, f]));
+
+/** Every selectable diagnosis: all real answers plus decoys, alphabetised. */
+const OPTIONS = [
+  ...FAULTS.map(f => ({ name: f.diagnosis, category: f.category })),
+  ...EXTRA_DIAGNOSES.map(([name, category]) => ({ name, category }))
+].sort((a, b) => a.name.localeCompare(b.name));
+const OPTION_BY_NAME = new Map(OPTIONS.map(o => [o.name.toLowerCase(), o]));
+
+// Integrity check: every answer must exist in the selectable list.
+FAULTS.forEach(f => {
+  if (!OPTION_BY_NAME.has(f.diagnosis.toLowerCase()) || f.clues.length !== 6) console.error('Bad fault data:', f.diagnosis);
+});
+
+const TIME_LIMIT = 60;           // seconds per job in Timed mode
+const MODES = [
+  { id: 'daily',  icon: '📅', name: 'Daily',  sub: 'One job a day' },
+  { id: 'endless', icon: '♾️', name: 'Endless', sub: 'Unlimited jobs' },
+  { id: 'career', icon: '🎓', name: 'Career', sub: 'Earn your stripes' },
+  { id: 'timed',  icon: '⏱️', name: 'Timed',  sub: `${TIME_LIMIT}s per job` }
+];
+
+/* ============================ STORAGE ============================ */
+const Store = (() => {
+  const KEY = 'faultle.save.v1';
+  const defaults = () => ({
+    settings: { sound: true, theme: 'dark', diff: [...DIFFICULTIES], cats: [...CATEGORIES], seenHelp: false },
+    stats: {
+      played: 0, wins: 0, score: 0, xp: 0, guesses: 0, correctGuesses: 0, cluesOnWins: 0,
+      dist: [0, 0, 0, 0, 0, 0], losses: 0, winStreak: 0, bestWinStreak: 0, bestShift: 0,
+      byCat: {}, byMode: {}, byDiff: {}, solved: {}, history: []
+    },
+    daily: { results: {}, streak: 0, maxStreak: 0, lastWon: null, progress: null },
+    achievements: {},
+    recent: []
+  });
+  /** Merge saved data over defaults so new fields survive upgrades. */
+  function merge(base, saved) {
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return saved === undefined ? base : saved;
+    const out = { ...base };
+    for (const k of Object.keys(saved)) {
+      out[k] = base[k] && typeof base[k] === 'object' && !Array.isArray(base[k]) ? merge(base[k], saved[k]) : saved[k];
+    }
+    return out;
+  }
+  const api = {
+    data: defaults(),
+    load() {
+      try { const raw = localStorage.getItem(KEY); if (raw) api.data = merge(defaults(), JSON.parse(raw)); }
+      catch (e) { console.warn('Save could not be read; starting fresh.', e); }
+    },
+    save() { try { localStorage.setItem(KEY, JSON.stringify(api.data)); } catch (e) { /* private mode etc. */ } },
+    reset() { api.data = defaults(); api.data.settings.seenHelp = true; api.save(); }
+  };
+  return api;
+})();
+
+/* ============================ SOUND (Web Audio, no assets) ============================ */
+const Sfx = (() => {
+  let ctx = null, gestured = false;
+  // Browsers only allow audio after a user gesture; wait for one before creating the context.
+  ['pointerdown', 'keydown'].forEach(ev => window.addEventListener(ev, () => { gestured = true; }, { capture: true, once: true }));
+  function ac() {
+    if (!gestured) return null;
+    if (!ctx) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; ctx = new C(); }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function tone(freq, { dur = 0.12, type = 'sine', vol = 0.15, delay = 0, slide = 0 } = {}) {
+    if (!Store.data.settings.sound) return;
+    const c = ac(); if (!c) return;
+    const t = c.currentTime + delay;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.05);
+  }
+  /** Short filtered noise burst: used for the metallic "clink". */
+  function noise(dur = 0.06, vol = 0.12, delay = 0, freq = 3000) {
+    if (!Store.data.settings.sound) return;
+    const c = ac(); if (!c) return;
+    const t = c.currentTime + delay;
+    const buf = c.createBuffer(1, Math.ceil(c.sampleRate * dur), c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 4;
+    const g = c.createGain(); g.gain.value = vol;
+    src.connect(f).connect(g).connect(c.destination); src.start(t);
+  }
+  return {
+    click: () => tone(900, { dur: 0.035, type: 'square', vol: 0.04 }),
+    reveal: () => { tone(520, { dur: 0.08, type: 'triangle', vol: 0.09 }); tone(780, { dur: 0.1, type: 'triangle', vol: 0.07, delay: 0.07 }); },
+    miss: () => tone(170, { dur: 0.25, type: 'sawtooth', vol: 0.08, slide: -70 }),
+    close: () => { tone(392, { dur: 0.12, type: 'triangle', vol: 0.1 }); tone(349, { dur: 0.16, type: 'triangle', vol: 0.08, delay: 0.1 }); },
+    win: () => {
+      [523, 659, 784, 1047].forEach((f, i) => tone(f, { dur: 0.2, type: 'triangle', vol: 0.11, delay: i * 0.08 }));
+      noise(0.08, 0.2, 0.36, 4200); tone(2637, { dur: 0.35, vol: 0.04, delay: 0.36 });
+    },
+    lose: () => [392, 330, 247].forEach((f, i) => tone(f, { dur: 0.28, vol: 0.11, delay: i * 0.16 })),
+    tick: () => tone(1500, { dur: 0.03, type: 'square', vol: 0.035 }),
+    achieve: () => [880, 1175, 1568].forEach((f, i) => tone(f, { dur: 0.3, vol: 0.09, delay: i * 0.09 })),
+    rank: () => [392, 523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, { dur: 0.25, type: 'triangle', vol: 0.1, delay: i * 0.09 }))
+  };
+})();
+
+/* ============================ DAILY SEED ============================ */
+/** Puzzle #1 is 1 Jan 2026. A fixed shuffle means no repeats for FAULTS.length days. */
+function dayNumber(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(2026, 0, 1)) / 864e5) + 1;
+}
+const DAILY_ORDER = (() => {
+  const idx = FAULTS.map((_, i) => i);
+  const r = mulberry32(0xFA017);
+  for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  return idx;
+})();
+function dailyFault(key) {
+  const n = dayNumber(key), N = FAULTS.length;
+  return FAULTS[DAILY_ORDER[(((n - 1) % N) + N) % N]];
+}
+/** Streak is only "live" if the last win was today or yesterday. */
+function dailyStreak() {
+  const d = Store.data.daily, t = dateKey();
+  return d.lastWon && (d.lastWon === t || d.lastWon === addDays(t, -1)) ? d.streak : 0;
+}
+
+/* ============================ RANKS & ACHIEVEMENTS ============================ */
+function rankIndex(xp) { let r = 0; RANKS.forEach((k, i) => { if (xp >= k.xp) r = i; }); return r; }
+
+const ACHIEVEMENTS = [
+  { id: 'first',   icon: '🔧', name: 'First Fix',         desc: 'Diagnose your first fault.',                         test: c => c.s.wins >= 1 },
+  { id: 'sixth',   icon: '🎯', name: 'Sixth Sense',       desc: 'Solve a job on the very first clue.',                test: c => c.won && c.r.revealed === 1 },
+  { id: 'wire',    icon: '😅', name: 'Down to the Wire',  desc: 'Solve a job on the sixth and final clue.',           test: c => c.won && c.r.revealed === 6 },
+  { id: 'patient', icon: '🧐', name: 'Measure Twice',     desc: 'Read 3+ clues, then solve with your first guess.',   test: c => c.won && c.r.guesses.length === 1 && c.r.revealed >= 3 },
+  { id: 'hat',     icon: '🎩', name: 'Hat-Trick',         desc: 'Win 3 jobs in a row.',                               test: c => c.s.winStreak >= 3 },
+  { id: 'roll',    icon: '🔥', name: 'On a Roll',         desc: 'Win 10 jobs in a row.',                              test: c => c.s.winStreak >= 10 },
+  { id: 'w25',     icon: '🧰', name: 'Seasoned',          desc: 'Win 25 jobs.',                                       test: c => c.s.wins >= 25 },
+  { id: 'w100',    icon: '🏆', name: 'Centurion',         desc: 'Win 100 jobs.',                                      test: c => c.s.wins >= 100 },
+  { id: 'p50',     icon: '🛠️', name: 'Shop Regular',      desc: 'Play 50 jobs.',                                      test: c => c.s.played >= 50 },
+  { id: 'd3',      icon: '📅', name: 'Regular Customer',  desc: 'Reach a 3-day Daily streak.',                        test: () => Store.data.daily.streak >= 3 },
+  { id: 'd7',      icon: '🗓️', name: 'Full Week Shift',   desc: 'Reach a 7-day Daily streak.',                        test: () => Store.data.daily.streak >= 7 },
+  { id: 'expert',  icon: '🧠', name: 'Expert Witness',    desc: 'Solve an expert-level job.',                         test: c => c.won && c.r.fault.difficulty === 'expert' },
+  { id: 'allcats', icon: '🌐', name: 'All-Rounder',       desc: 'Solve at least one job in every system.',            test: c => CATEGORIES.every(k => (c.s.byCat[k] || {}).w > 0) },
+  { id: 'ev',      icon: '⚡', name: 'Volt Whisperer',    desc: 'Solve 5 Hybrid & EV jobs.',                          test: c => ((c.s.byCat['Hybrid & EV'] || {}).w || 0) >= 5 },
+  { id: 'sparky',  icon: '🔌', name: 'Sparky',            desc: 'Solve 5 Electrical jobs.',                           test: c => ((c.s.byCat.Electrical || {}).w || 0) >= 5 },
+  { id: 'speed',   icon: '🏎️', name: 'Speed Demon',       desc: 'Solve a Timed job in under 10 seconds.',             test: c => c.won && c.r.mode === 'timed' && TIME_LIMIT - c.r.timeLeft < 10 },
+  { id: 'shift5',  icon: '🚨', name: 'Busy Shift',        desc: 'Solve 5 jobs in a single Timed shift.',              test: () => G.shift.solved >= 5 },
+  { id: 'tech',    icon: '🎓', name: 'Qualified',         desc: 'Reach the rank of Technician.',                      test: c => rankIndex(c.s.xp) >= 2 },
+  { id: 'master',  icon: '👑', name: 'Master Technician', desc: 'Reach the top rank.',                                test: c => rankIndex(c.s.xp) >= 4 },
+  { id: 'k5',      icon: '💰', name: 'Big Earner',        desc: 'Earn 5,000 total points.',                           test: c => c.s.score >= 5000 }
+];
+
+function checkAchievements(r) {
+  const ctx = { r, s: Store.data.stats, won: r.status === 'won' };
+  const got = Store.data.achievements;
+  ACHIEVEMENTS.forEach((a, i) => {
+    if (got[a.id]) return;
+    let ok = false; try { ok = a.test(ctx); } catch (e) { ok = false; }
+    if (ok) {
+      got[a.id] = Date.now();
+      setTimeout(() => { Sfx.achieve(); toast(`${a.icon} Achievement unlocked: <b>${esc(a.name)}</b>`); }, 900 + i * 40);
+    }
+  });
+}
+
+/* ============================ ROUND ENGINE ============================ */
+/** Global session state. One round is cached per mode so switching tabs never loses progress. */
+const G = { mode: 'daily', rounds: {}, shift: { score: 0, solved: 0 }, timerId: null, animClue: false, showFilters: false };
+
+function makeRound(fault, mode) {
+  return { fault, mode, revealed: 1, steps: [], guesses: [], status: 'playing', score: 0, bonus: 0, xp: 0,
+           timeLeft: mode === 'timed' ? TIME_LIMIT : null, dateKey: mode === 'daily' ? dateKey() : null };
+}
+
+/** Random pick that avoids recently seen faults where the pool allows it. */
+function pickFrom(pool, weights) {
+  if (!pool.length) return null;
+  const recent = new Set(Store.data.recent);
+  let candidates = pool.map((f, i) => [f, weights ? weights[i] : 1]);
+  const fresh = candidates.filter(([f]) => !recent.has(f.id));
+  if (fresh.length >= Math.min(5, candidates.length)) candidates = fresh;
+  const total = candidates.reduce((a, [, w]) => a + w, 0);
+  let x = Math.random() * total;
+  for (const [f, w] of candidates) { if ((x -= w) <= 0) return f; }
+  return candidates[candidates.length - 1][0];
+}
+function endlessPool() {
+  const { diff, cats } = Store.data.settings;
+  return FAULTS.filter(f => diff.includes(f.difficulty) && cats.includes(f.category));
+}
+function careerPool() {
+  const rank = RANKS[rankIndex(Store.data.stats.xp)];
+  const pool = FAULTS.filter(f => rank.unlocks.includes(f.difficulty));
+  const newest = rank.unlocks[rank.unlocks.length - 1];
+  return { pool, weights: pool.map(f => (f.difficulty === newest && rank.unlocks.length > 1 ? 2.5 : 1)) };
+}
+
+/** Build (or restore) the round for a mode. */
+function roundFor(mode, forceNew = false) {
+  if (mode === 'daily') {
+    const key = dateKey(), fault = dailyFault(key), d = Store.data.daily;
+    const cached = G.rounds.daily;
+    if (cached && cached.dateKey === key && !forceNew) return cached;
+    const r = makeRound(fault, 'daily');
+    const res = d.results[key];
+    const prog = d.progress && d.progress.date === key ? d.progress : null;
+    const src = res || prog;
+    if (src) { r.revealed = src.revealed; r.steps = src.steps.slice(); r.guesses = src.guesses.slice(); }
+    if (res) { r.status = res.won ? 'won' : 'lost'; r.score = res.score; r.xp = res.xp || 0; r.restored = true; }
+    return (G.rounds.daily = r);
+  }
+  if (!forceNew && G.rounds[mode]) return G.rounds[mode];
+  let fault = null;
+  if (mode === 'endless') fault = pickFrom(endlessPool());
+  else if (mode === 'career') { const { pool, weights } = careerPool(); fault = pickFrom(pool, weights); }
+  else fault = pickFrom(FAULTS);
+  return (G.rounds[mode] = fault ? makeRound(fault, mode) : null);
+}
+
+function saveDailyProgress(r) {
+  if (r.mode !== 'daily' || r.status !== 'playing') return;
+  Store.data.daily.progress = { date: r.dateKey, revealed: r.revealed, steps: r.steps, guesses: r.guesses };
+  Store.save();
+}
+
+/** Player commits a diagnosis. */
+function submitGuess(text) {
+  const r = G.round;
+  if (!r || r.status !== 'playing') return;
+  const opt = OPTION_BY_NAME.get(String(text).trim().toLowerCase());
+  if (!opt) { shakeInput(); toast('Pick a diagnosis from the list.'); return; }
+  if (r.guesses.some(g => g.name === opt.name)) { shakeInput(); toast('You’ve already ruled that one out.'); return; }
+
+  const correct = opt.name === r.fault.diagnosis;
+  const result = correct ? 'hit' : opt.category === r.fault.category ? 'close' : 'miss';
+  r.guesses.push({ name: opt.name, category: opt.category, result, clue: r.revealed });
+  r.steps.push(result);
+
+  if (correct) return finish(true);
+  Sfx[result]();
+  if (r.revealed >= 6) return finish(false);
+  r.revealed++; G.animClue = true;
+  setTimeout(Sfx.reveal, 220);
+  saveDailyProgress(r);
+  renderBoard(true);
+}
+
+/** Reveal the next clue without guessing (or give up on the last clue). */
+function skipClue() {
+  const r = G.round;
+  if (!r || r.status !== 'playing') return;
+  r.steps.push('skip');
+  if (r.revealed >= 6) return finish(false, 'gaveup');
+  r.revealed++; G.animClue = true;
+  Sfx.reveal();
+  saveDailyProgress(r);
+  renderBoard(true);
+}
+
+/** End of a round: scoring, XP, stats, streaks, achievements. */
+function finish(won, reason) {
+  const r = G.round;
+  stopTimer();
+  r.status = won ? 'won' : 'lost';
+  r.reason = reason;
+  const base = won ? POINTS[r.revealed - 1] : 0;
+  r.bonus = won && r.mode === 'timed' ? Math.ceil(r.timeLeft) * 2 : 0;
+  r.score = base + r.bonus;
+  r.xp = won ? Math.round(r.score * DIFF_MULT[r.fault.difficulty] * (r.mode === 'career' ? 1.5 : 1)) : 5;
+
+  const s = Store.data.stats;
+  const rankBefore = rankIndex(s.xp);
+  s.played++; s.score += r.score; s.xp += r.xp;
+  s.guesses += r.guesses.length;
+  if (won) { s.wins++; s.correctGuesses++; s.cluesOnWins += r.revealed; s.dist[r.revealed - 1]++; s.winStreak++; s.bestWinStreak = Math.max(s.bestWinStreak, s.winStreak); }
+  else { s.losses++; s.winStreak = 0; }
+  const bump = (obj, k) => { obj[k] = obj[k] || { p: 0, w: 0 }; obj[k].p++; if (won) obj[k].w++; };
+  bump(s.byCat, r.fault.category); bump(s.byMode, r.mode); bump(s.byDiff, r.fault.difficulty);
+  if (won) s.solved[r.fault.id] = (s.solved[r.fault.id] || 0) + 1;
+  s.history.unshift({ d: r.fault.diagnosis, m: r.mode, w: won, c: r.revealed, s: r.score, t: Date.now() });
+  s.history.length = Math.min(s.history.length, 40);
+  Store.data.recent = [r.fault.id, ...Store.data.recent.filter(id => id !== r.fault.id)].slice(0, 30);
+
+  if (r.mode === 'daily') {
+    const d = Store.data.daily, key = r.dateKey;
+    if (won) { d.streak = d.lastWon === addDays(key, -1) ? d.streak + 1 : (d.lastWon === key ? d.streak : 1); d.lastWon = key; d.maxStreak = Math.max(d.maxStreak, d.streak); }
+    else d.streak = 0;
+    d.results[key] = { won, revealed: r.revealed, steps: r.steps, guesses: r.guesses, score: r.score, xp: r.xp };
+    d.progress = null;
+  }
+  if (r.mode === 'timed') {
+    if (won) { G.shift.solved++; G.shift.score += r.score; }
+    s.bestShift = Math.max(s.bestShift, G.shift.score);
+  }
+  checkAchievements(r);
+  Store.save();
+
+  const rankAfter = rankIndex(s.xp);
+  if (rankAfter > rankBefore) setTimeout(() => { Sfx.rank(); toast(`🎓 Promoted to <b>${RANKS[rankAfter].name}</b>! New jobs unlocked in Career.`, 5000); }, 700);
+
+  if (won) { Sfx.win(); setTimeout(() => sparks($('.stamp')), 60); } else Sfx.lose();
+  renderAll();
+}
+
+/* ============================ TIMER (Timed mode) ============================ */
+function startTimer() {
+  stopTimer();
+  const r = G.round;
+  if (!r || r.mode !== 'timed' || r.status !== 'playing') return;
+  let last = performance.now(), lastSec = Math.ceil(r.timeLeft);
+  G.timerId = setInterval(() => {
+    const now = performance.now();
+    r.timeLeft = Math.max(0, r.timeLeft - (now - last) / 1000); last = now;
+    const sec = Math.ceil(r.timeLeft);
+    if (sec !== lastSec) { lastSec = sec; if (sec <= 10 && sec > 0) Sfx.tick(); }
+    updateTimerUI();
+    if (r.timeLeft <= 0) finish(false, 'time');
+  }, 100);
+}
+function stopTimer() { if (G.timerId) clearInterval(G.timerId); G.timerId = null; }
+function updateTimerUI() {
+  const el = $('#timer'), r = G.round;
+  if (!el || !r) return;
+  const p = r.timeLeft / TIME_LIMIT;
+  el.style.setProperty('--p', p.toFixed(3));
+  el.style.setProperty('--tc', p > 0.5 ? 'var(--hit)' : p > 0.2 ? 'var(--close)' : 'var(--miss)');
+  el.classList.toggle('low', r.timeLeft <= 10);
+  el.firstElementChild.textContent = Math.ceil(r.timeLeft);
+}
+
+/* ============================ RENDERING ============================ */
+function renderAll() { renderModes(); renderInfobar(); renderFilters(); renderBoard(); renderSoundBtn(); }
+
+function renderModes() {
+  $('#modes').innerHTML = MODES.map(m => {
+    let sub = m.sub;
+    if (m.id === 'daily') { const res = Store.data.daily.results[dateKey()]; if (res) sub = res.won ? '✅ Solved today' : '❌ Done for today'; }
+    if (m.id === 'career') sub = RANKS[rankIndex(Store.data.stats.xp)].name;
+    return `<button class="mode" role="tab" data-mode="${m.id}" aria-selected="${G.mode === m.id}">
+      <span class="ico">${m.icon}</span>${m.name}<small>${esc(sub)}</small></button>`;
+  }).join('');
+}
+
+function renderInfobar() {
+  const s = Store.data.stats, box = $('#infobar');
+  const xpPill = `<span class="pill">🏅 <b>${fmt(s.xp)}</b> XP</span>`;
+  if (G.mode === 'daily') {
+    const key = dateKey();
+    box.innerHTML = `<span class="pill">Daily <b>#${dayNumber(key)}</b></span>
+      <span class="pill">${new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+      <span class="grow"></span><span class="pill">🔥 Streak <b>${dailyStreak()}</b></span><span class="pill">Best <b>${Store.data.daily.maxStreak}</b></span>`;
+  } else if (G.mode === 'endless') {
+    const n = endlessPool().length;
+    box.innerHTML = `<span class="pill">Pool <b>${n}</b> faults</span><span class="pill">Win streak <b>${s.winStreak}</b></span>
+      <span class="grow"></span>${xpPill}<button class="btn small" id="btn-filters" aria-expanded="${G.showFilters}">⚙️ Filters</button>`;
+  } else if (G.mode === 'career') {
+    const ri = rankIndex(s.xp), rank = RANKS[ri], next = RANKS[ri + 1];
+    const prog = next ? (s.xp - rank.xp) / (next.xp - rank.xp) : 1;
+    box.innerHTML = `<span class="pill">🎓 <b>${rank.name}</b></span>
+      <div class="xpbar" title="${fmt(s.xp)} XP"><i style="width:${Math.round(prog * 100)}%"></i></div>
+      <span class="pill">${next ? `${fmt(s.xp)} / ${fmt(next.xp)} XP` : `${fmt(s.xp)} XP · max rank`}</span>
+      <span class="pill">Jobs: ${rank.unlocks.map(cap).join(', ')}</span>
+      <span class="pill">×1.5 XP</span>`;
+  } else {
+    box.innerHTML = `<span class="pill">⏱️ <b>${TIME_LIMIT}s</b> per job</span><span class="pill">Shift score <b>${fmt(G.shift.score)}</b></span>
+      <span class="pill">Jobs cleared <b>${G.shift.solved}</b></span><span class="grow"></span><span class="pill">Best shift <b>${fmt(s.bestShift)}</b></span>`;
+  }
+}
+
+function renderFilters() {
+  const box = $('#filters');
+  const show = G.mode === 'endless' && G.showFilters;
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  const { diff, cats } = Store.data.settings;
+  const count = k => FAULTS.filter(f => f.category === k).length;
+  box.innerHTML = `<h4>Difficulty</h4><div class="chips">${DIFFICULTIES.map(d =>
+      `<button class="chip" data-fdiff="${d}" aria-pressed="${diff.includes(d)}">${cap(d)}</button>`).join('')}</div>
+    <h4>Systems</h4><div class="chips">${CATEGORIES.map(c =>
+      `<button class="chip" data-fcat="${esc(c)}" aria-pressed="${cats.includes(c)}">${esc(c)} <small>${count(c)}</small></button>`).join('')}</div>
+    <div class="chips"><button class="chip" data-fall="1">Select all</button><button class="chip" data-fnone="1">Clear systems</button></div>`;
+}
+
+function workOrderNo(id) { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return String(1000 + (h % 9000)); }
+
+function renderBoard(keepFocus = false) {
+  const r = G.round = roundFor(G.mode);
+  const board = $('#board');
+  if (!r) {
+    board.innerHTML = `<div class="job"><div class="result"><p>No faults match your filters.</p>
+      <button class="btn primary" data-fall="1">Reset filters</button></div></div>`;
+    return;
+  }
+  const wasFocused = keepFocus || document.activeElement === $('#guess-input');
+  const playing = r.status === 'playing';
+  const leds = Array.from({ length: 6 }, (_, i) => {
+    const st = r.steps[i];
+    const cls = st ? st : (i < r.revealed && playing ? 'on' : '');
+    return `<div class="led ${cls}"></div>`;
+  }).join('');
+  const clues = r.fault.clues.map((c, i) => {
+    const shown = i < r.revealed || !playing;
+    const isNew = G.animClue && i === r.revealed - 1;
+    return shown
+      ? `<div class="clue${isNew ? ' new' : ''}"><span class="n">${i + 1}</span><span class="txt">${esc(c)}</span></div>`
+      : `<div class="clue locked"><span class="n">${i + 1}</span><span class="txt">▮▮▮▮ LOCKED ▮▮▮▮</span></div>`;
+  }).join('');
+  G.animClue = false;
+
+  const guesses = r.guesses.map(g => `<div class="guess ${g.result}"><span class="dot"></span>${esc(g.name)}
+      <span class="tag">${g.result === 'hit' ? 'Correct' : g.result === 'close' ? `Right system · ${esc(g.category)}` : `Not ${esc(g.category)}`}</span></div>`).join('');
+
+  const pts = POINTS[r.revealed - 1];
+  const timer = r.mode === 'timed' ? `<div class="timer" id="timer"><span>${Math.ceil(r.timeLeft)}</span></div>` : '';
+
+  board.innerHTML = `<article class="job">
+    <div class="job-head"><span class="title">Work Order</span><span class="wo">#WO-${workOrderNo(r.fault.id)}</span>
+      <span class="diff ${r.fault.difficulty}">${cap(r.fault.difficulty)}</span>
+      ${!playing ? `<span class="pill">${esc(r.fault.category)}</span>` : ''}
+      <span style="flex:1"></span>${timer}</div>
+    <div class="progress"><div class="leds" aria-hidden="true">${leds}</div>
+      <span class="clue-count">CLUE ${r.revealed}/6</span>
+      ${playing ? `<span class="worth">Worth <b>${pts}</b> pts</span>` : ''}</div>
+    <div class="screen" role="list" aria-label="Clues">${clues}</div>
+    ${guesses ? `<div class="guesses">${guesses}</div>` : ''}
+    ${playing ? controlsHTML(r) : resultHTML(r)}
+  </article>`;
+
+  if (playing) {
+    bindCombo();
+    if (r.mode === 'timed') { updateTimerUI(); if (!G.timerId) startTimer(); }
+    if (wasFocused) $('#guess-input').focus();
+  }
+}
+
+function controlsHTML(r) {
+  const last = r.revealed >= 6;
+  return `<div class="controls">
+    <div class="combo" id="combo">
+      <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="guess-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type a diagnosis (e.g. sensor, pump, leak)…"
+        role="combobox" aria-expanded="false" aria-controls="suggest" aria-autocomplete="list">
+      <div class="suggest hidden" id="suggest" role="listbox"></div>
+    </div>
+    <button class="btn primary" id="btn-guess">Diagnose</button>
+    <button class="btn" id="btn-skip" title="${last ? 'Reveal the answer' : 'Reveal the next clue (costs points)'}">${last ? 'Give up' : 'Next clue ▸'}</button>
+  </div>`;
+}
+
+function resultHTML(r) {
+  const won = r.status === 'won';
+  const msg = won
+    ? ['Spot on!', 'Textbook diagnosis.', 'Great call.', 'Sorted.', 'Fixed first time.', 'Lucky… or skilled?'][r.revealed - 1]
+    : r.reason === 'time' ? 'Out of time!' : r.reason === 'gaveup' ? 'Job returned to the customer.' : 'Misdiagnosed!';
+  let actions = `<button class="btn" id="btn-share">📋 Share result</button>`;
+  if (r.mode === 'daily') actions += `<button class="btn primary" data-goto="endless">Play Endless ▸</button>`;
+  else if (r.mode === 'timed' && !won) actions += `<button class="btn primary" id="btn-next">Start new shift ▸</button>`;
+  else actions += `<button class="btn primary" id="btn-next">Next job ▸</button>`;
+  actions += `<button class="btn" data-open="stats">📊 Stats</button>`;
+  const shiftLine = r.mode === 'timed' ? `<span class="pill">Shift <b>${fmt(G.shift.score)}</b> · ${G.shift.solved} cleared</span>` : '';
+  return `<div class="result">
+    <div class="stamp ${won ? 'win' : 'lose'}">${won ? 'Fixed' : 'Failed'}</div>
+    <div class="answer">${esc(r.fault.diagnosis)}</div>
+    <div class="answer-meta">${esc(msg)} ${won ? `Solved on clue ${r.revealed} of 6.` : 'The clues above show how it presents.'}</div>
+    <div class="score-line">
+      <span class="pill"><b>+${r.score}</b> pts${r.bonus ? ` (incl. ${r.bonus} speed bonus)` : ''}</span>
+      <span class="pill"><b>+${r.xp}</b> XP</span>${shiftLine}
+    </div>
+    <div class="actions">${actions}</div>
+    ${r.mode === 'daily' ? `<div class="next-daily" id="next-daily"></div>` : ''}
+  </div>`;
+}
+
+function renderSoundBtn() {
+  const on = Store.data.settings.sound;
+  $('#btn-sound').innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/>${on ? '<path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>' : '<path d="m16 9 5 6M21 9l-5 6"/>'}</svg>`;
+  $('#btn-sound').setAttribute('aria-pressed', on);
+}
+
+/** Countdown to the next daily puzzle. */
+setInterval(() => {
+  const el = $('#next-daily'); if (!el) return;
+  const now = new Date(), next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const ms = next - now, h = Math.floor(ms / 36e5), m = Math.floor(ms / 6e4) % 60, s = Math.floor(ms / 1e3) % 60;
+  el.textContent = `Next daily job in ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  if (G.mode === 'daily' && G.round && G.round.dateKey !== dateKey()) renderAll();   // midnight rollover
+}, 1000);
+
+/* ---------- FX ---------- */
+function toast(html, ms = 2600) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.innerHTML = html;
+  $('#toasts').appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, ms);
+}
+function shakeInput() {
+  const c = $('#combo'); if (!c) return;
+  c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
+}
+/** Welding-spark burst from an element. */
+function sparks(el) {
+  if (!el) return;
+  const b = el.getBoundingClientRect(), cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+  const colours = ['#f5b301', '#ff7a1a', '#fff3c4', '#3ddc84'];
+  for (let i = 0; i < 28; i++) {
+    const s = document.createElement('span'); s.className = 'spark';
+    const a = Math.random() * Math.PI * 2, d = 60 + Math.random() * 120;
+    s.style.left = cx + 'px'; s.style.top = cy + 'px';
+    s.style.background = colours[i % colours.length];
+    s.style.setProperty('--dx', Math.cos(a) * d + 'px'); s.style.setProperty('--dy', Math.sin(a) * d + 40 + 'px');
+    document.body.appendChild(s); setTimeout(() => s.remove(), 1000);
+  }
+}
+
+/* ============================ AUTOCOMPLETE ============================ */
+/** Options appear only after 2+ characters, so the list can't simply be scanned.
+ *  Ranking: every token must match; prefix and word-start matches score higher.
+ *  Falls back to typo-tolerant matching (edit distance) when nothing matches. */
+function searchOptions(q) {
+  q = q.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const toks = q.split(/\s+/).filter(Boolean);
+  const scored = [];
+  for (const o of OPTIONS) {
+    const name = o.name.toLowerCase(), hay = name + ' ' + o.category.toLowerCase();
+    let score = 0, ok = true;
+    for (const t of toks) {
+      const i = hay.indexOf(t);
+      if (i < 0) { ok = false; break; }
+      score += i === 0 ? 4 : /[\s(\-/]/.test(hay[i - 1]) ? 3 : 1;
+      if (i >= name.length) score -= 1;           // category-only matches rank lower
+    }
+    if (ok) scored.push([score + (name.startsWith(q) ? 6 : 0), o]);
+  }
+  if (!scored.length) {
+    for (const o of OPTIONS) {
+      const words = (o.name + ' ' + o.category).toLowerCase().split(/[\s()\-/]+/);
+      const ok = toks.every(t => t.length < 3 || words.some(w => levenshtein(t, w.slice(0, t.length)) <= (t.length >= 6 ? 2 : 1)));
+      if (ok && toks.some(t => t.length >= 3)) scored.push([0, o]);
+    }
+  }
+  return scored.sort((a, b) => b[0] - a[0] || a[1].name.localeCompare(b[1].name)).map(x => x[1]);
+}
+function highlight(name, q) {
+  let out = esc(name);
+  q.trim().toLowerCase().split(/\s+/).filter(t => t.length > 0).forEach(t => {
+    const re = new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'i');
+    out = out.replace(re, '<mark>$1</mark>');
+  });
+  return out;
+}
+
+function bindCombo() {
+  const input = $('#guess-input'), list = $('#suggest');
+  let items = [], active = -1;
+  const tried = new Set(G.round.guesses.map(g => g.name));
+
+  function open(show) { list.classList.toggle('hidden', !show); input.setAttribute('aria-expanded', show); }
+  function draw() {
+    const q = input.value;
+    const all = searchOptions(q);
+    items = all.slice(0, 12);
+    const more = all.length - items.length;
+    if (q.trim().length < 2) { open(false); return; }
+    if (!items.length) { list.innerHTML = `<div class="hint">No match. Try a component or symptom word: “pump”, “sensor”, “leak”.</div>`; open(true); return; }
+    if (active >= items.length) active = items.length - 1;
+    list.innerHTML = items.map((o, i) => `<button type="button" class="opt${tried.has(o.name) ? ' tried' : ''}" role="option" data-i="${i}" aria-selected="${i === active}">
+      <span>${highlight(o.name, q)}</span><small>${esc(o.category)}</small></button>`).join('')
+      + (more > 0 ? `<div class="hint">+${more} more. Keep typing to narrow it down.</div>` : '');
+    open(true);
+  }
+  function choose(i) {
+    const o = items[i]; if (!o) return;
+    input.value = o.name; open(false); active = -1; Sfx.click(); input.focus();
+  }
+  input.addEventListener('input', () => { active = 0; draw(); });
+  input.addEventListener('focus', () => { if (input.value.trim().length >= 2) draw(); });
+  input.addEventListener('blur', () => setTimeout(() => open(false), 150));
+  input.addEventListener('keydown', e => {
+    const isOpen = !list.classList.contains('hidden') && items.length;
+    if (e.key === 'ArrowDown' && isOpen) { e.preventDefault(); active = (active + 1) % items.length; draw(); }
+    else if (e.key === 'ArrowUp' && isOpen) { e.preventDefault(); active = (active - 1 + items.length) % items.length; draw(); }
+    else if (e.key === 'Escape') open(false);
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      // Exact match → submit. Otherwise first Enter fills the highlighted option, second submits.
+      if (OPTION_BY_NAME.has(input.value.trim().toLowerCase()) && (!isOpen || items[active]?.name.toLowerCase() === input.value.trim().toLowerCase())) submitGuess(input.value);
+      else if (isOpen && active >= 0) choose(active);
+      else submitGuess(input.value);
+    }
+  });
+  list.addEventListener('mousedown', e => e.preventDefault());   // keep focus in the input
+  list.addEventListener('click', e => { const b = e.target.closest('.opt'); if (b) choose(+b.dataset.i); });
+}
+
+/* ============================ MODALS ============================ */
+function openModal(title, html) {
+  closeModal();
+  $('#modal-root').innerHTML = `<div class="modal-bg" id="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+    <div class="modal-head"><h2>${esc(title)}</h2><button class="icon-btn" id="modal-close" aria-label="Close">✕</button></div>
+    <div class="modal-body">${html}</div></div></div>`;
+  Sfx.click();
+}
+function closeModal() { $('#modal-root').innerHTML = ''; }
+
+function statsHTML() {
+  const s = Store.data.stats;
+  const avg = s.wins ? (s.cluesOnWins / s.wins).toFixed(2) : '–';
+  const tiles = [
+    [s.played, 'Games played'], [pct(s.wins, s.played) + '%', 'Win rate'], [pct(s.correctGuesses, s.guesses) + '%', 'Accuracy'],
+    [avg, 'Avg clues used'], [fmt(s.score), 'Total score'], [fmt(s.xp), 'XP'], [s.winStreak, 'Win streak'],
+    [s.bestWinStreak, 'Best streak'], [dailyStreak(), 'Daily streak'], [fmt(s.bestShift), 'Best timed shift']
+  ].map(([v, l]) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`).join('');
+
+  const maxD = Math.max(1, ...s.dist, s.losses);
+  const last = G.round && G.round.status === 'won' ? G.round.revealed - 1 : -1;
+  const dist = s.dist.map((n, i) => `<div class="bar"><span>Clue ${i + 1} · ${POINTS[i]}</span>
+      <div class="track"><div class="fill${i === last ? ' hl' : ''}" style="width:${(n / maxD) * 100}%"></div></div><span class="num">${n}</span></div>`).join('')
+    + `<div class="bar"><span>Unsolved</span><div class="track"><div class="fill" style="width:${(s.losses / maxD) * 100}%;background:var(--miss)"></div></div><span class="num">${s.losses}</span></div>`;
+
+  const cats = CATEGORIES.map(c => {
+    const v = s.byCat[c] || { p: 0, w: 0 };
+    return `<div class="bar"><span>${esc(c)}</span><div class="track"><div class="fill hl" style="width:${pct(v.w, v.p)}%"></div></div>
+      <span class="num">${v.p ? pct(v.w, v.p) + '%' : '–'}</span></div>`;
+  }).join('');
+
+  const modes = MODES.map(m => { const v = s.byMode[m.id] || { p: 0, w: 0 }; return `<tr><td>${m.icon} ${m.name}</td><td>${v.p}</td><td>${v.w}</td><td>${v.p ? pct(v.w, v.p) + '%' : '–'}</td></tr>`; }).join('');
+  const hist = s.history.slice(0, 10).map(h => `<div><span>${h.w ? '✅' : '❌'}</span><span>${esc(h.d)}</span>
+      <span>${cap(h.m)} · ${h.w ? `clue ${h.c}` : 'X'} · ${h.s}</span></div>`).join('') || '<p>No jobs yet. Get your overalls on!</p>';
+  const solvedUnique = Object.keys(s.solved).length;
+
+  return `<div class="tiles">${tiles}</div>
+    <h3>Clue distribution</h3><div class="bars">${dist}</div>
+    <h3>Win rate by system</h3><div class="bars">${cats}</div>
+    <h3>By mode</h3><table class="mini"><tr><th>Mode</th><th>Played</th><th>Won</th><th>Win %</th></tr>${modes}</table>
+    <h3>Fault library</h3><p>You have diagnosed <b>${solvedUnique}</b> of <b>${FAULTS.length}</b> unique faults.</p>
+    <h3>Recent jobs</h3><div class="history">${hist}</div>`;
+}
+
+function achievementsHTML() {
+  const got = Store.data.achievements;
+  const n = ACHIEVEMENTS.filter(a => got[a.id]).length;
+  return `<p>${n} of ${ACHIEVEMENTS.length} unlocked.</p><div class="ach-grid">${ACHIEVEMENTS.map(a => `
+    <div class="ach ${got[a.id] ? 'got' : 'locked'}"><div class="badge">${a.icon}</div>
+      <div><b>${esc(a.name)}</b><small>${esc(a.desc)}</small></div></div>`).join('')}</div>`;
+}
+
+function helpHTML() {
+  return `<p>A car has come into the workshop. Read the job sheet and <b>diagnose the fault</b> in as few clues as you can.</p>
+    <ul>
+      <li>Clue 1 is what the customer says at the counter. Each new clue adds what you'd find with more time, tools and tests.</li>
+      <li>Type in the search box (2+ letters) and choose a diagnosis from the ${OPTIONS.length} options, then press <b>Diagnose</b>.</li>
+      <li>A wrong diagnosis reveals the next clue. You can also take the next clue without guessing.</li>
+      <li>After clue 6, one last wrong call reveals the answer.</li>
+    </ul>
+    <h3>Feedback</h3>
+    <div class="guess hit"><span class="dot"></span>Correct diagnosis</div>
+    <div class="guess close" style="margin-top:6px"><span class="dot"></span>Right system (e.g. Cooling), wrong fault</div>
+    <div class="guess miss" style="margin-top:6px"><span class="dot"></span>Wrong system entirely</div>
+    <h3>Scoring</h3>
+    <table class="mini"><tr><th>Solved on clue</th>${POINTS.map((_, i) => `<td>${i + 1}</td>`).join('')}</tr>
+      <tr><th>Points</th>${POINTS.map(p => `<td>${p}</td>`).join('')}</tr></table>
+    <p>XP = points × difficulty (Easy ×1, Medium ×1.25, Hard ×1.5, Expert ×2). Career jobs earn ×1.5 XP. A failed job still earns 5 XP for the experience.</p>
+    <h3>Modes</h3>
+    <ul><li><b>Daily</b>: the same job for everyone today, with a streak to protect.</li>
+      <li><b>Endless</b>: random jobs, filtered by difficulty and system.</li>
+      <li><b>Career</b>: start as an Apprentice on easy jobs and earn XP to unlock harder diagnostics.</li>
+      <li><b>Timed</b>: ${TIME_LIMIT} seconds per job, with +2 points for every second left. One failure ends the shift.</li></ul>
+    <h3>Ranks</h3>
+    <table class="mini">${RANKS.map(r => `<tr><td>${r.name}</td><td>${fmt(r.xp)} XP</td><td>${r.unlocks.map(cap).join(', ')}</td></tr>`).join('')}</table>
+    <p style="margin-top:14px;color:var(--muted);font-size:.82rem">${FAULTS.length} fault scenarios across ${CATEGORIES.length} systems. Clues describe typical presentations. Real faults vary, so always test before replacing parts.</p>`;
+}
+
+function settingsHTML() {
+  const st = Store.data.settings;
+  return `<div class="row"><div><b>Sound effects</b><br><small style="color:var(--muted)">Generated live in your browser</small></div>
+      <button class="switch" data-toggle="sound" role="switch" aria-checked="${st.sound}"></button></div>
+    <div class="row"><div><b>Dark workshop theme</b><br><small style="color:var(--muted)">Turn off for a daylight bay</small></div>
+      <button class="switch" data-toggle="theme" role="switch" aria-checked="${st.theme === 'dark'}"></button></div>
+    <div class="row"><div><b>Reset all progress</b><br><small style="color:var(--muted)">Stats, XP, streaks and achievements</small></div>
+      <button class="btn small danger" id="btn-reset">Reset…</button></div>`;
+}
+
+/* ============================ SHARE ============================ */
+function shareText(r) {
+  const map = { skip: '⬜', miss: '🟥', close: '🟧', hit: '🟩' };
+  const line = r.steps.map(x => map[x]).join('');
+  const title = r.mode === 'daily' ? `FAULTLE Daily #${dayNumber(r.dateKey)}` : `FAULTLE ${cap(r.mode)}`;
+  const res = r.status === 'won' ? `${r.revealed}/6` : 'X/6';
+  const extra = r.mode === 'daily' ? ` · 🔥${dailyStreak()}` : r.mode === 'timed' ? ` · ⏱️${Math.ceil(r.timeLeft)}s left` : '';
+  return `${title} 🔧 ${res}\n${line}\n${r.score} pts · ${cap(r.fault.difficulty)}${extra}`;
+}
+async function share(r) {
+  const text = shareText(r);
+  try {
+    if (navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) { await navigator.share({ text }); return; }
+    await navigator.clipboard.writeText(text);
+    toast('📋 Result copied to clipboard');
+  } catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (_) { /* ignore */ }
+    ta.remove();
+    toast(ok ? '📋 Result copied to clipboard' : esc(text).replace(/\n/g, '<br>'), ok ? 2600 : 6000);
+  }
+}
+
+/* ============================ EVENTS ============================ */
+function switchMode(mode) {
+  if (mode === G.mode) return;
+  stopTimer(); Sfx.click();
+  G.mode = mode;
+  renderAll();
+}
+function nextJob() {
+  const r = G.round;
+  if (r && r.mode === 'timed' && r.status === 'lost') G.shift = { score: 0, solved: 0 };
+  G.rounds[G.mode] = null;
+  G.animClue = true;
+  renderAll();
+  Sfx.reveal();
+  const inp = $('#guess-input'); if (inp && window.matchMedia('(pointer:fine)').matches) inp.focus();
+}
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  const mode = t.closest('[data-mode]'); if (mode) return switchMode(mode.dataset.mode);
+  const go = t.closest('[data-goto]'); if (go) return switchMode(go.dataset.goto);
+  if (t.closest('#btn-guess')) return submitGuess($('#guess-input').value);
+  if (t.closest('#btn-skip')) return skipClue();
+  if (t.closest('#btn-next')) return nextJob();
+  if (t.closest('#btn-share')) return share(G.round);
+  if (t.closest('#btn-help')) return openModal('How to play', helpHTML());
+  if (t.closest('#btn-stats') || t.closest('[data-open="stats"]')) return openModal('Workshop statistics', statsHTML());
+  if (t.closest('#btn-ach')) return openModal('Achievements', achievementsHTML());
+  if (t.closest('#btn-settings')) return openModal('Settings', settingsHTML());
+  if (t.closest('#modal-close') || t.id === 'modal-bg') return closeModal();
+  if (t.closest('#btn-sound')) { Store.data.settings.sound = !Store.data.settings.sound; Store.save(); renderSoundBtn(); Sfx.click(); return; }
+  if (t.closest('#btn-filters')) { G.showFilters = !G.showFilters; Sfx.click(); renderInfobar(); renderFilters(); return; }
+
+  const tog = t.closest('[data-toggle]');
+  if (tog) {
+    const st = Store.data.settings;
+    if (tog.dataset.toggle === 'sound') st.sound = !st.sound;
+    if (tog.dataset.toggle === 'theme') { st.theme = st.theme === 'dark' ? 'light' : 'dark'; applyTheme(); }
+    Store.save(); Sfx.click(); renderSoundBtn();
+    tog.setAttribute('aria-checked', tog.dataset.toggle === 'sound' ? st.sound : st.theme === 'dark');
+    return;
+  }
+  if (t.closest('#btn-reset')) {
+    const b = t.closest('#btn-reset');
+    if (b.dataset.armed) { Store.reset(); G.rounds = {}; G.shift = { score: 0, solved: 0 }; stopTimer(); closeModal(); applyTheme(); renderAll(); toast('Progress reset. Fresh overalls!'); }
+    else { b.dataset.armed = '1'; b.textContent = 'Tap again to confirm'; }
+    return;
+  }
+
+  // Endless filters: changing them starts a fresh job from the new pool.
+  const st = Store.data.settings;
+  const fd = t.closest('[data-fdiff]'), fc = t.closest('[data-fcat]');
+  if (fd || fc || t.closest('[data-fall]') || t.closest('[data-fnone]')) {
+    if (fd) { const d = fd.dataset.fdiff; st.diff = st.diff.includes(d) ? st.diff.filter(x => x !== d) : [...st.diff, d]; }
+    if (fc) { const c = fc.dataset.fcat; st.cats = st.cats.includes(c) ? st.cats.filter(x => x !== c) : [...st.cats, c]; }
+    if (t.closest('[data-fall]')) { st.diff = [...DIFFICULTIES]; st.cats = [...CATEGORIES]; }
+    if (t.closest('[data-fnone]')) st.cats = [];
+    Store.save(); Sfx.click();
+    const cur = G.rounds.endless;
+    if (!cur || cur.status !== 'playing' || !st.diff.includes(cur.fault.difficulty) || !st.cats.includes(cur.fault.category)) G.rounds.endless = null;
+    renderInfobar(); renderFilters(); renderBoard();
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('#modal-bg')) closeModal();
+  if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') { const i = $('#guess-input'); if (i) { e.preventDefault(); i.focus(); } }
+});
+
+function applyTheme() {
+  document.documentElement.classList.toggle('light', Store.data.settings.theme === 'light');
+  document.querySelector('meta[name=theme-color]').content = Store.data.settings.theme === 'light' ? '#e9e6df' : '#0f1113';
+}
+
+/* ============================ BOOT ============================ */
+Store.load();
+applyTheme();
+renderAll();
+if (!Store.data.settings.seenHelp) { openModal('How to play', helpHTML()); Store.data.settings.seenHelp = true; Store.save(); }
+
+</script>
+</body>
+</html>
